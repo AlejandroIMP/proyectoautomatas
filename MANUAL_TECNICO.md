@@ -7,7 +7,7 @@
 ## 1. Arquitectura del Sistema y Fundamentos Teóricos
 
 ### 1.1. Ubicación en la Teoría de Compiladores
-El proyecto implementa la primera fase clásica de un compilador: el **Análisis Léxico** o *Scanner*. 
+El proyecto implementa la primera fase clásica de un compilador: el **Análisis Léxico** o *Scanner*, complementado con un módulo de diagnóstico y generación de reportes contextualizados.
 
 ```
 +------------------+        +-------------------+        +--------------------+
@@ -15,11 +15,17 @@ El proyecto implementa la primera fase clásica de un compilador: el **Análisis
 |   JavaScript     |        |   (JFlex / AFD)   | Tokens | Sintáctico (Parser)|
 +------------------+        +-------------------+        +--------------------+
                                       |                             |
-                                      v                             v
-                             +-----------------+           +------------------+
-                             |    Tabla de     |           |    Árbol de      |
-                             |    Símbolos     |           |  Sintaxis (AST)  |
-                             +-----------------+           +------------------+
+                                      +--------------------------+  v
+                                      |                          | +------------------+
+                                      v                          | |    Árbol de      |
+                             +-----------------+                 | |  Sintaxis (AST)  |
+                             |    Tabla de     |                 | +------------------+
+                             |    Símbolos     |                 |
+                             +-----------------+                 v
+                                      |                 +--------------------+
+                                      +---------------> | Módulo de Reportes |
+                                                        |  (HTML / Markdown) |
+                                                        +--------------------+
 ```
 
 * **Jerarquía de Chomsky:** El nivel léxico opera estrictamente mediante **Gramáticas Regulares (Tipo 3)**. Todos los patrones léxicos (palabras clave, operadores, delimitadores, literales e identificadores) son expresables mediante expresiones regulares y reconocibles en tiempo lineal $O(n)$ por un **Autómata Finito Determinista (AFD)** generado automáticamente por JFlex.
@@ -27,9 +33,10 @@ El proyecto implementa la primera fase clásica de un compilador: el **Análisis
 
 ### 1.2. Características Modernas de Java 21 (LTS)
 El proyecto aprovecha las capacidades del estándar Java 21:
-* **Records (`record`):** Utilizados para modelar entidades de datos inmutables (`Token`, `ErrorLexico`, `EntradaSimbolo`, y variantes de `NodoAST`), reduciendo el código repetitivo (*boilerplate*) y garantizando seguridad en concurrencia e inmutabilidad estricta.
+* **Records (`record`):** Utilizados para modelar entidades de datos inmutables (`Token`, `ErrorLexico`, `EntradaSimbolo`, `MetricasReporte`, y variantes de `NodoAST`), reduciendo el código repetitivo (*boilerplate*) y garantizando inmutabilidad estricta.
 * **Interfaces Selladas (`sealed interface`):** La interfaz `NodoAST` restringe explícitamente qué registros pueden implementarla mediante la cláusula `permits`, asegurando un modelo cerrado para el futuro parser y facilitando el uso de *Pattern Matching for switch*.
-* **API de Archivos y Streams (`java.nio.file.Files`, UTF-8):** Manejo robusto de codificación en todo el proyecto.
+* **Stream API y Procesamiento Funcional:** Agrupamiento (`Collectors.groupingBy`), conteo por categorías y cálculo estadístico en el módulo de reportes.
+* **API de Archivos y Codificación (`java.nio.file.Files`, UTF-8):** Manejo robusto de archivos en todo el proyecto.
 
 ---
 
@@ -56,6 +63,8 @@ AnalizadorLexico/
 │   │   │       │   ├── Token.java            <-- Record de token con posición
 │   │   │       │   ├── ErrorLexico.java      <-- Record de error léxico
 │   │   │       │   └── TablaSimbolos.java    <-- Gestor de identificadores
+│   │   │       ├── reporte/
+│   │   │       │   └── GeneradorReporte.java <-- Módulo de métricas y exportación HTML/MD
 │   │   │       └── sintactico/
 │   │   │           ├── TokenStream.java      <-- Buffer y adaptador LL(1)
 │   │   │           └── NodoAST.java          <-- Jerarquía sellada del AST
@@ -69,7 +78,9 @@ AnalizadorLexico/
 │   └── test/
 │       └── java/
 │           └── com/analizador/
-│               └── AnalizadorLexicoTest.java <-- Suite automatizada JUnit 5
+│               ├── AnalizadorLexicoTest.java <-- Suite léxica JUnit 5
+│               └── reporte/
+│                   └── GeneradorReporteTest.java <-- Pruebas de reportes JUnit 5
 └── target/
     ├── generated-sources/
     │   └── jflex/
@@ -121,160 +132,83 @@ public record ErrorLexico(
 ```
 
 #### `TablaSimbolos.java`
-Gestor en memoria para el catálogo de identificadores. Emplea un `LinkedHashMap` para preservar el orden cronológico de primera aparición y utiliza el método atómico `compute` para actualizar la cantidad de ocurrencias:
-```java
-public class TablaSimbolos {
-    public record EntradaSimbolo(String nombre, String categoria, int primeraLinea,
-                                 int primeraColumna, int ocurrencias) {}
-    private final Map<String, EntradaSimbolo> tabla = new LinkedHashMap<>();
-
-    public void registrarIdentificador(String nombre, int linea, int columna) {
-        tabla.compute(nombre, (k, v) -> v == null
-                ? new EntradaSimbolo(nombre, "IDENTIFICADOR", linea, columna, 1)
-                : new EntradaSimbolo(nombre, v.categoria(), v.primeraLinea(),
-                    v.primeraColumna(), v.ocurrencias() + 1));
-    }
-    public Collection<EntradaSimbolo> obtenerTodos() { return tabla.values(); }
-    public void limpiar() { tabla.clear(); }
-}
-```
+Gestor en memoria para el catálogo de identificadores. Emplea un `LinkedHashMap` para preservar el orden cronológico de primera aparición y utiliza el método atómico `compute` para actualizar la cantidad de ocurrencias.
 
 ---
 
 ### 3.2. Motor Léxico JFlex (`Lexer.flex`)
 
 El archivo de especificación contiene tres secciones separadas por `%%`:
-
-#### Directivas y Código de Usuario (Sección 1)
-* `%public`, `%class AnalizadorLexicoJS`: Declara la visibilidad y nombre de la clase generada.
-* `%unicode`: Permite procesamiento del juego completo de caracteres Unicode.
-* `%line`, `%column`: Activa el seguimiento de números de línea (`yyline`) y columna (`yycolumn`).
-* `%type Token`: Define que el método `yylex()` retorna instancias de `Token`.
-* `%eofval{ ... %eofval}`: Genera automáticamente el token `TokenType.EOF` con sus coordenadas al finalizar la lectura.
-
-#### Macros y Expresiones Regulares (Sección 2)
-```jflex
-LineTerminator = \r|\n|\r\n
-WhiteSpace     = [ \t\f] | {LineTerminator}
-LineComment    = "//" [^\r\n]* {LineTerminator}?
-BlockComment   = "/*" ([^*]|\*+[^*/])* \*+ "/"
-Letter         = [a-zA-Z_$]
-Digit          = [0-9]
-Identifier     = {Letter}({Letter}|{Digit})*
-Integer        = 0 | [1-9]{Digit}*
-Float          = ({Integer}"."{Digit}+|{Integer}("."{Digit}+)?[eE][+-]?{Digit}+)
-DoubleString   = \"([^\"\\\r\n]|\\.)*\"
-SingleString   = \'([^\\'\\\r\n]|\\.)*\'
-String         = {DoubleString}|{SingleString}
-```
-
-#### Reglas Léxicas y Acciones (Sección 3)
-1. **Espacios y Comentarios:** Se ignoran sin generar tokens pero incrementan los contadores de posición.
-2. **Prioridad de Palabras Reservadas:** Reglas explícitas (`"let"`, `"const"`, `"function"`, etc.) declaradas **antes** que `{Identifier}`. Si una secuencia coincide con `else`, JFlex resolverá la ambigüedad asociándola a la palabra reservada en lugar de un identificador genérico.
-3. **Prioridad de Operadores Compuestos:** Reglas como `"==="` y `"!=="` se ubican antes de `"=="` y `"="` para garantizar el emparejamiento con el prefijo más largo (*longest match*).
-4. **Captura de Errores Léxicos:** Regla de respaldo:
-   ```jflex
-   [^] {
-       errores.add(new ErrorLexico(yytext(), yyline + 1, yycolumn + 1,
-               "Símbolo no perteneciente al alfabeto léxico"));
-   }
-   ```
-   Esta regla captura cualquier carácter no reconocido por las reglas anteriores, añade el incidente a la lista de errores y permite al AFD continuar con el siguiente carácter.
+* **Directivas:** `%public`, `%class AnalizadorLexicoJS`, `%unicode`, `%line`, `%column`, `%type Token`.
+* **Macros Regex:** Reglas para números enteros, flotantes (notación científica `[eE]`), cadenas con escapes simples y dobles (`\"`, `\'`), comentarios de línea y bloque (`/* ... */`).
+* **Acciones:**
+  * Precedencia de palabras clave sobre identificadores.
+  * Precedencia de operadores compuestos sobre simples (`===` sobre `==` sobre `=`).
+  * Regla final de captura de errores `[^]` para no abortar el escaneo.
 
 ---
 
-### 3.3. Puente hacia el Analizador Sintáctico (`com.analizador.sintactico`)
+### 3.3. Módulo de Reportes Contextualizados (`com.analizador.reporte`)
 
-#### `TokenStream.java`
-Desacopla el analizador sintáctico del lexer de JFlex mediante un buffer de tokens que implementa las operaciones necesarias para analizadores predictivos descendentes LL(1):
-* `peek()`: Inspecciona el token actual sin consumirlo (Lookahead $k=1$).
-* `next()`: Consume el token actual y avanza el cursor de posición.
-* `match(TokenType esperado)`: Verifica que el token actual coincida con la expectativa gramatical; en caso afirmativo avanza, de lo contrario lanza una excepción controlada.
-* `getTodosLosTokens()`: Retorna una copia inmutable del flujo completo de tokens.
+#### `GeneradorReporte.java`
+Ofrece las siguientes responsabilidades desacopladas de la interfaz gráfica:
+1. **`calcularMetricas(...)`**: Calcula estadísticas avanzadas mediante Streams de Java: total de líneas, caracteres, desglose por familias de tokens (palabras clave, operadores, delimitadores, literales), frecuencias y top 5 de identificadores más utilizados.
+2. **`generarHTML(...)`**: Genera un documento HTML5 completo y autocontenido con estilos CSS modernos (tarjetas métricas, tablas de distribución con porcentajes, etiquetas de colores, código resaltado y diagnósticos).
+3. **`generarMarkdown(...)`**: Genera un documento Markdown con tablas y bloques de código, ideal para documentación técnica en repositorios Git.
+4. **`generarHTMLParaSwing(...)`**: Genera un resumen HTML ligero compatible con `JEditorPane` de Swing para visualizar el reporte dentro de la propia interfaz gráfica.
+5. **`guardarEnArchivo(...)`**: Escribe el contenido en disco de forma segura utilizando codificación UTF-8.
 
-#### `NodoAST.java`
-Estructura jerárquica con interfaces selladas para representar las sentencias y expresiones:
-```java
-public sealed interface NodoAST permits
-        NodoAST.ExpresionBinaria,
-        NodoAST.Literal,
-        NodoAST.DeclaracionVariable,
-        NodoAST.Programa {
+---
 
-    record Programa(List<NodoAST> sentencias) implements NodoAST {}
-    record ExpresionBinaria(NodoAST izquierda, Token operador, NodoAST derecha) implements NodoAST {}
-    record Literal(Token token) implements NodoAST {}
-    record DeclaracionVariable(Token tipoDeclaracion, Token identificador, NodoAST valorInicial) implements NodoAST {}
-}
-```
+### 3.4. Puente hacia el Analizador Sintáctico (`com.analizador.sintactico`)
+
+* **`TokenStream.java`**: Buffer desacoplado con lookahead $k=1$ (`peek()`), avance (`next()`) y emparejamiento con validación (`match(TokenType)`).
+* **`NodoAST.java`**: Jerarquía con interfaces selladas (`sealed interface`) para modelar las expresiones binarias, literales, declaraciones y programas.
 
 ---
 
 ## 4. Configuración del Entorno Maven (`pom.xml`)
 
-El archivo de configuración gestiona tres plugins esenciales:
-
-1. **`jflex-maven-plugin` (v1.9.1):**
-   * Fase: `generate-sources`.
-   * Acción: Toma `Lexer.flex` y genera `target/generated-sources/jflex/com/analizador/lexico/AnalizadorLexicoJS.java`.
-2. **`build-helper-maven-plugin` (v3.5.0):**
-   * Acción: Añade `target/generated-sources/jflex` al conjunto de carpetas de código fuente del proyecto para que tanto Maven como IntelliJ IDEA y Eclipse reconozcan la clase generada sin configuración manual adicional.
-3. **`maven-jar-plugin` (v3.3.0):**
-   * Acción: Agrega el atributo `Main-Class: com.analizador.MainApp` al archivo `META-INF/MANIFEST.MF`, permitiendo la ejecución directa del `.jar`.
-4. **`junit-jupiter` (v5.10.2):**
-   * Alcance: `test`. Soporte para ejecución de pruebas unitarias modernas.
+1. **`jflex-maven-plugin` (v1.9.1):** Compilación automática de `Lexer.flex` en la fase `generate-sources`.
+2. **`build-helper-maven-plugin` (v3.5.0):** Agrega `target/generated-sources/jflex` como carpeta de fuentes para IDEs y compilador.
+3. **`maven-jar-plugin` (v3.3.0):** Genera el manifest con `Main-Class: com.analizador.MainApp`.
+4. **`junit-jupiter` (v5.10.2):** Dependencia de pruebas unitarias.
 
 ---
 
 ## 5. Compilación, Pruebas y Despliegue
 
-### Comandos de Terminal
+```bash
+# Compilar proyecto y generar código de JFlex
+mvn clean compile
 
-* **Limpiar y compilar el proyecto:**
-  ```bash
-  mvn clean compile
-  ```
-* **Ejecutar la suite completa de pruebas unitarias:**
-  ```bash
-  mvn test
-  ```
-* **Empaquetar la aplicación en un archivo `.jar` ejecutable:**
-  ```bash
-  mvn clean package
-  ```
-  El artefacto resultante se ubicará en `target/analizador-js-1.0.0.jar`.
-* **Ejecutar el archivo `.jar` empaquetado:**
-  ```bash
-  java -jar target/analizador-js-1.0.0.jar
-  ```
+# Ejecutar las 11 pruebas unitarias automatizadas
+mvn test
+
+# Generar archivo ejecutable JAR
+mvn clean package
+
+# Ejecutar la aplicación
+java -jar target/analizador-js-1.0.0.jar
+```
 
 ---
 
-## 6. Cobertura de Pruebas Unitarias (`AnalizadorLexicoTest.java`)
+## 6. Cobertura de Pruebas Unitarias
 
-La clase de pruebas incluye 6 casos automatizados con JUnit 5:
+El proyecto cuenta con **11 pruebas automatizadas** que se ejecutan con `mvn test`:
 
-1. `testAlgoritmoBajo()`: Valida variables, constantes (`const`, `let`), operaciones aritméticas elementales, verificación de fin de archivo (`EOF`) y presencia de identificadores en la tabla de símbolos.
-2. `testAlgoritmoMedio()`: Valida palabras clave de control de flujo (`function`, `while`, `for`, `if`, `else`, `return`), operadores relacionales (`>=`) e incremento (`++`).
-3. `testAlgoritmoAlto()`: Valida notación científica (`1.5e-4`), identificadores que inician con `$` y `_`, operadores de igualdad estricta (`===`, `!==`) y cadenas con comillas escapadas (`\"`).
-4. `testAlgoritmoMuyComplejo()`: Prueba de estrés con el algoritmo de Dijkstra y multiplicación de matrices, verificando más de 150 tokens, comentarios multilínea extensos y precisión en coordenadas.
-5. `testRecuperacionErroresLexicos()`: Inyecta caracteres ilegales (`@`, `#`, `~`, `^`, `?`) y comprueba que la lista de errores los captura de forma independiente con línea y columna exactas, sin impedir que los tokens válidos posteriores sean procesados.
-6. `testTokenStreamBridge()`: Valida los métodos `peek()`, `next()`, `match()` exitoso y la generación de excepciones ante discrepancias léxicas.
+### Suite de Análisis Léxico (`AnalizadorLexicoTest.java`)
+1. `testAlgoritmoBajo()`: Valida variables, constantes y operadores elementales.
+2. `testAlgoritmoMedio()`: Valida estructuras de control y funciones.
+3. `testAlgoritmoAlto()`: Valida notación científica, identificadores con `$` y `_`, y secuencias de escape.
+4. `testAlgoritmoMuyComplejo()`: Prueba de estrés con el algoritmo de Dijkstra y matrices (más de 150 tokens).
+5. `testRecuperacionErroresLexicos()`: Valida detección de símbolos prohibidos (`@`, `#`, `~`, `^`, `?`) sin abortar el escaneo.
+6. `testTokenStreamBridge()`: Valida operaciones predictivas LL(1) (`peek`, `next`, `match`).
 
----
-
-## 7. Extensibilidad hacia la Fase Sintáctica
-
-Para integrar la siguiente fase (analizador sintáctico):
-1. **Crear la clase `ParserJS`:**
-   ```java
-   public class ParserJS {
-       private final TokenStream stream;
-       public ParserJS(TokenStream stream) { this.stream = stream; }
-       public NodoAST parsePrograma() { ... }
-   }
-   ```
-2. **Implementar las funciones de derivación recursiva:**
-   Utilizar `stream.peek()` para seleccionar la regla de producción gramatical y `stream.match(...)` para consumir los terminales esperados.
-3. **Construir el Árbol AST:**
-   Instanciar los registros de `NodoAST` (`Programa`, `ExpresionBinaria`, etc.) y enlazarlos al componente `JTree` de `VentanaPrincipal`.
+### Suite del Módulo de Reportes (`GeneradorReporteTest.java`)
+7. `testMetricasScriptLimpio()`: Valida el cálculo de líneas, tokens y distribución de categorías.
+8. `testGenerarHTML()`: Valida la estructura de etiquetas, metadatos y secciones del reporte HTML5.
+9. `testGenerarMarkdown()`: Valida la consistencia de tablas y encabezados Markdown.
+10. `testReporteConErrores()`: Valida que los errores léxicos se reflejen en los reportes HTML y MD.
+11. `testGenerarHTMLParaSwing()`: Valida la generación de HTML compatible con el visor interno de Swing.

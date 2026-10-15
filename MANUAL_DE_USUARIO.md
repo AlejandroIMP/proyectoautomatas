@@ -11,6 +11,8 @@ El sistema cuenta con una interfaz gráfica interactiva construida en Java Swing
 * La secuencia cronológica de tokens reconocidos con sus coordenadas de línea y columna.
 * La tabla de símbolos con conteo de ocurrencias de variables y funciones.
 * La consola de errores léxicos detectados.
+* **Informes y reportes ejecutivos contextualizados:** Resumen estadístico, distribución de tokens, porcentajes y diagnóstico del código analizado.
+* **Exportación de reportes:** Generación de reportes en formato **HTML moderno** (con diseño responsivo y estilos CSS) y en formato **Markdown (.md)**.
 * La estructura base para la futura fase de análisis sintáctico.
 
 ---
@@ -52,21 +54,21 @@ mvn clean compile exec:java -Dexec.mainClass="com.analizador.MainApp"
 La ventana principal está organizada en cuatro zonas principales:
 
 ```
-+-----------------------------------------------------------------------------------+
-| [ Cargar .js ]   | [ Selector de Dificultad v ] |   [ Ejecutar Análisis Léxico ]  |
-+-----------------------------------------------------------------------------------+
-|                                        |  [Flujo de Tokens] [Símbolos] [Árbol]   |
-|                                        |------------------------------------------|
-|                                        |  # | Token | Lexema | Línea | Col | Val  |
-|          EDITOR DE CÓDIGO              |------------------------------------------|
-|                                        |  1 | CONST | const  |   5   |  1  |  -   |
-|         (Área de Texto JS)             |  2 | ID    | PI     |   5   |  7  |  -   |
-|                                        |  3 | ASIG  |   =    |   5   | 10  |  -   |
-|                                        |  4 | FLOT  | 3.1415 |   5   | 12  | 3.14 |
-+----------------------------------------+------------------------------------------+
-|  CONSOLA DE ERRORES LÉXICOS                                                       |
-|  Lexema Inválido | Línea | Columna | Descripción                                  |
-+-----------------------------------------------------------------------------------+
++-------------------------------------------------------------------------------------------------+
+| [ Cargar .js ] | [ Selector de Dificultad v ] | [ Ejecutar Análisis Léxico ] | [ Exportar Reporte ]
++-------------------------------------------------------------------------------------------------+
+|                                        |  [Tokens] [Símbolos] [Informe Ejecutivo] [Árbol]      |
+|                                        |--------------------------------------------------------|
+|                                        |  # | Token | Lexema | Línea | Col | Valor Literal      |
+|          EDITOR DE CÓDIGO              |--------------------------------------------------------|
+|                                        |  1 | CONST | const  |   5   |  1  |  -                 |
+|         (Área de Texto JS)             |  2 | ID    | PI     |   5   |  7  |  -                 |
+|                                        |  3 | ASIG  |   =    |   5   | 10  |  -                 |
+|                                        |  4 | FLOT  | 3.1415 |   5   | 12  | 3.1415             |
++----------------------------------------+--------------------------------------------------------+
+|  CONSOLA DE ERRORES LÉXICOS                                                                     |
+|  Lexema Inválido | Línea | Columna | Descripción                                                |
++-------------------------------------------------------------------------------------------------+
 ```
 
 ### 4.1. Barra Superior de Herramientas (ToolBar)
@@ -79,6 +81,7 @@ La ventana principal está organizada en cuatro zonas principales:
    * `Prueba Errores Léxicos`: Demostración de captura y recuperación de caracteres prohibidos (`@`, `#`, `~`, `^`, etc.).
    *(Al elegir cualquier opción, el código se carga en el editor y se analiza automáticamente).*
 3. **Botón "Ejecutar Análisis Léxico":** Reanaliza el código fuente actual del editor en caso de haber realizado modificaciones manuales.
+4. **Botón "Exportar Reporte":** Permite generar y guardar un reporte contextualizado completo en formato **HTML** o **Markdown (.md)**, y ofrece abrirlo directamente en el navegador web predeterminado.
 
 ### 4.2. Editor de Código Fuente (Panel Izquierdo)
 * Área de texto con tipografía monoespaciada de alta legibilidad (`Font.MONOSPACED`).
@@ -96,7 +99,11 @@ La ventana principal está organizada en cuatro zonas principales:
   * `Categoría`: Clasificación (`IDENTIFICADOR`).
   * `1ra Línea` y `1ra Columna`: Ubicación donde fue declarado o usado por primera vez.
   * `Ocurrencias`: Contador de veces que se repite el identificador en todo el código.
-* **Pestaña 3 — "Árbol Sintáctico":** Estructura jerárquica visual (`JTree`) preparada para conectar el analizador sintáctico en la siguiente fase de desarrollo.
+* **Pestaña 3 — "Informe Ejecutivo":** Muestra un resumen visual inmediato con métricas clave:
+  * Total de líneas, caracteres y tokens procesados.
+  * Desglose por categorías (palabras clave, operadores, literales, delimitadores).
+  * Diagnóstico contextual para la fase sintáctica.
+* **Pestaña 4 — "Árbol Sintáctico":** Estructura jerárquica visual (`JTree`) preparada para conectar el analizador sintáctico en la siguiente fase de desarrollo.
 
 ### 4.4. Consola de Errores Léxicos (Panel Inferior)
 Si el código contiene caracteres ajenos al alfabeto del lenguaje (como `@`, `#`, tildes invertidas, símbolos no reconocidos), esta tabla muestra:
@@ -108,45 +115,29 @@ Si el código contiene caracteres ajenos al alfabeto del lenguaje (como `@`, `#`
 
 ## 5. Guía de Uso Paso a Paso
 
-### Caso 1: Probar un algoritmo preestablecido
-1. Inicie la aplicación. Por defecto se cargará el algoritmo de **Dificultad Baja**.
-2. Despliegue el menú **Selector de Dificultad** y seleccione **"Dificultad Media"**.
-3. Observe cómo el editor se actualiza con un algoritmo de ordenamiento burbuja y cálculo de factoriales.
-4. La tabla **Flujo de Tokens** mostrará inmediatamente tokens como `FUNCTION`, `WHILE`, `FOR`, `RETURN`, `INCREMENTO`, etc.
-5. Pase a la pestaña **Tabla de Símbolos** para verificar cuántas veces se utilizan los identificadores `arr`, `longitud`, `temp`, etc.
+### Caso 1: Generar y Exportar un Reporte
+1. Inicie la aplicación o seleccione el algoritmo deseado (por ejemplo, **"Dificultad Muy Compleja"**).
+2. Revise la pestaña **"Informe Ejecutivo"** para ver las métricas preliminares.
+3. Haga clic en el botón superior **"Exportar Reporte"**.
+4. Seleccione el formato deseado:
+   * **Reporte HTML (Completo con Estilos):** Genera una página web moderna con tarjetas de resumen, tablas interactivas, código resaltado y estilos CSS independientes.
+   * **Reporte Markdown (.md):** Genera un documento en texto estructurado ideal para documentación técnica, repositorios Git o informes de laboratorio.
+5. Elija la ubicación donde desea guardar el archivo.
+6. El sistema le preguntará si desea abrir el reporte inmediatamente en su navegador web. Haga clic en **Sí** para visualizarlo.
 
-### Caso 2: Probar la detección de errores léxicos
+### Caso 2: Probar la detección de errores léxicos y su reporte
 1. En el menú desplegable, seleccione **"Prueba Errores Léxicos"**.
-2. El editor mostrará declaraciones como:
-   ```javascript
-   let @usuario = "Juan Perez";
-   const #MAX_INTENTOS = 5;
-   let factor = 12.5 ~ 3.2;
-   ```
-3. Observe la tabla inferior **Consola de Errores Léxicos**:
-   * Se registrarán de forma individual los símbolos `@`, `#`, `~`, `^`, `?`.
-4. Observe la tabla superior **Flujo de Tokens**:
-   * A pesar de los errores, el analizador no se detuvo y continuó extrayendo tokens válidos como `let`, `usuario`, `=`, `"Juan Perez"`, `;`.
-
-### Caso 3: Escribir o editar código propio
-1. Haga clic en el editor de código a la izquierda.
-2. Escriba o pegue cualquier función o expresión JavaScript:
-   ```javascript
-   function calcularArea(ancho, alto) {
-       let resultado = ancho * alto;
-       return resultado;
-   }
-   ```
-3. Haga clic en el botón superior **"Ejecutar Análisis Léxico"**.
-4. Las tablas de resultados se actualizarán al instante.
+2. Observe la tabla inferior **Consola de Errores Léxicos**:
+   * Se registrarán los símbolos `@`, `#`, `~`, `^`, `?`.
+3. Vaya a la pestaña **"Informe Ejecutivo"**:
+   * El estado del análisis cambiará automáticamente a <font color="red">**CON ERRORES LÉXICOS**</font> y detallará el impacto de dichos símbolos.
+4. Al exportar el reporte en HTML, se incluirá una sección especial de **Incidentes Léxicos Detectados** con advertencias técnicas para el usuario.
 
 ---
 
 ## 6. Preguntas Frecuentes y Solución de Problemas
 
-* **¿Por qué un carácter ilegal no detiene la ejecución del programa?**
-  * El analizador implementa una estrategia de captura y recuperación léxica mediante la regla comodín `[^]` en JFlex. Esto permite listar todos los errores presentes en el archivo sin abortar el análisis.
-* **¿Cómo se diferencian operadores como `=` y `===`?**
-  * JFlex utiliza el principio de máxima longitud (*longest match*) y prioridad de reglas. El operador estricto `===` tiene prioridad sobre la igualdad simple `==` y la asignación `=`.
-* **¿Qué sucede con los comentarios y espacios en blanco?**
-  * Los espacios, tabulaciones y saltos de línea se utilizan como separadores y son descartados, al igual que los comentarios de línea (`//...`) y de bloque (`/*...*/`), sin generar tokens en la tabla pero incrementando adecuadamente los contadores de línea y columna.
+* **¿Por qué un error como `"le t"` no sale en la consola de errores léxicos?**
+  * Porque `"le"` y `"t"` son caracteres alfabéticos válidos, por lo que son reconocidos como identificadores (variables) independientes. La prohibición de tener dos identificadores consecutivos es una regla sintáctica, no léxica.
+* **¿Qué archivos de reporte se pueden compartir?**
+  * El archivo `.html` exportado es completamente autónomo (no depende de conexión a internet ni librerías externas) y puede enviarse por correo, abrirse en Chrome, Edge o Firefox, o guardarse como PDF desde la opción de imprimir del navegador.
