@@ -60,7 +60,7 @@ public final class GeneradorReporte {
                      MENOR, MAYOR, MENOR_IGUAL, MAYOR_IGUAL, AND, OR, NOT -> operadores++;
                 case PAREN_IZQ, PAREN_DER, LLAVE_IZQ, LLAVE_DER, CORCHETE_IZQ, CORCHETE_DER,
                      PUNTO_COMA, COMA, DOS_PUNTOS, PUNTO -> delimitadores++;
-                case LIT_ENTERO, LIT_FLOTANTE, LIT_CADENA -> literales++;
+                case LIT_ENTERO, LIT_FLOTANTE, LIT_CADENA, LIT_TEMPLATE -> literales++;
                 default -> {}
             }
         }
@@ -431,7 +431,7 @@ public final class GeneradorReporte {
         return switch (tipo) {
             case LET, CONST, VAR, FUNCTION, IF, ELSE, WHILE, FOR, RETURN, TRUE, FALSE, NULL -> "tag-kw";
             case ID -> "tag-id";
-            case LIT_ENTERO, LIT_FLOTANTE, LIT_CADENA -> "tag-lit";
+            case LIT_ENTERO, LIT_FLOTANTE, LIT_CADENA, LIT_TEMPLATE -> "tag-lit";
             case MAS, MENOS, MULT, DIV, MOD, ASIGNACION, INCREMENTO, DECREMENTO,
                  IGUAL_IGUAL, IGUAL_ESTRICTO, DIFERENTE, DIFERENTE_ESTRICTO,
                  MENOR, MAYOR, MENOR_IGUAL, MAYOR_IGUAL, AND, OR, NOT -> "tag-op";

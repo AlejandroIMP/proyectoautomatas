@@ -194,4 +194,59 @@ public class AnalizadorLexicoTest {
         assertThrows(IllegalStateException.class, () -> stream.match(TokenType.LLAVE_IZQ),
                 "Un tipo inesperado en match() debe lanzar excepcion sintactica");
     }
+
+    @Test
+    @DisplayName("Template Literals: Reconocimiento de plantillas de texto multilineas y simples")
+    void testTemplateLiterals() throws Exception {
+        String codigo = """
+                const saludo = `Hola ${usuario}`;
+                const multilinea = `Linea 1
+                Linea 2
+                Linea 3`;
+                """;
+        TablaSimbolos tabla = new TablaSimbolos();
+        AnalizadorLexicoJS lexer = new AnalizadorLexicoJS(new StringReader(codigo), tabla);
+        TokenStream stream = new TokenStream(lexer);
+        List<Token> tokens = stream.getTodosLosTokens();
+
+        assertTrue(lexer.getErrores().isEmpty(), "No deben existir errores lexicos en template strings");
+
+        List<Token> templates = tokens.stream()
+                .filter(t -> t.tipo() == TokenType.LIT_TEMPLATE)
+                .toList();
+        assertEquals(2, templates.size(), "Deben reconocerse 2 template literals");
+        assertEquals("Hola ${usuario}", templates.get(0).valorLiteral());
+        assertTrue(templates.get(1).valorLiteral().toString().contains("Linea 2"));
+    }
+
+    @Test
+    @DisplayName("Tabla de Simbolos: Verificacion de metodos de consulta y busqueda")
+    void testTablaSimbolosConsultas() throws Exception {
+        TablaSimbolos tabla = new TablaSimbolos();
+        assertTrue(tabla.estaVacia());
+        assertEquals(0, tabla.cantidad());
+
+        tabla.registrarIdentificador("contador", 5, 10);
+        tabla.registrarIdentificador("contador", 8, 12);
+        tabla.registrarIdentificador("limite", 6, 1);
+
+        assertFalse(tabla.estaVacia());
+        assertEquals(2, tabla.cantidad());
+        assertTrue(tabla.existe("contador"));
+        assertTrue(tabla.existe("limite"));
+        assertFalse(tabla.existe("noExiste"));
+
+        var entradaContador = tabla.buscar("contador");
+        assertNotNull(entradaContador);
+        assertEquals(5, entradaContador.primeraLinea());
+        assertEquals(10, entradaContador.primeraColumna());
+        assertEquals(2, entradaContador.ocurrencias());
+
+        assertNull(tabla.buscar("noExiste"));
+        assertTrue(tabla.buscarOpcional("limite").isPresent());
+        assertTrue(tabla.buscarOpcional("noExiste").isEmpty());
+
+        assertEquals(2, tabla.obtenerMapa().size());
+        assertDoesNotThrow(tabla::mostrar);
+    }
 }

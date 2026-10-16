@@ -51,6 +51,7 @@ Float = ({Integer}"."{Digit}+|{Integer}("."{Digit}+)?[eE][+-]?{Digit}+)
 DoubleString = \"([^\"\\\r\n]|\\.)*\"
 SingleString = \'([^\'\\\r\n]|\\.)*\'
 String = {DoubleString}|{SingleString}
+TemplateString = \`([^\\\`]|\\.)*\`
 
 %%
 
@@ -106,6 +107,7 @@ String = {DoubleString}|{SingleString}
     {Float}            { return token(TokenType.LIT_FLOTANTE, Double.parseDouble(yytext())); }
     {Integer}          { return token(TokenType.LIT_ENTERO, Long.parseLong(yytext())); }
     {String}           { return token(TokenType.LIT_CADENA, yytext().substring(1, yytext().length() - 1)); }
+    {TemplateString}   { return token(TokenType.LIT_TEMPLATE, yytext().substring(1, yytext().length() - 1)); }
     {Identifier}       {
         tablaSimbolos.registrarIdentificador(yytext(), yyline + 1, yycolumn + 1);
         return token(TokenType.ID);
