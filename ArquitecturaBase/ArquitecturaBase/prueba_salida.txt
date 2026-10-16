@@ -1,0 +1,70 @@
+=== PRUEBA DEL BUFFER ===
+Caracter: l    | linea: 1 | columna inicial: 1
+Caracter: e    | linea: 1 | columna inicial: 2
+Caracter: t    | linea: 1 | columna inicial: 3
+Caracter:      | linea: 1 | columna inicial: 4
+Caracter: e    | linea: 1 | columna inicial: 5
+Caracter: d    | linea: 1 | columna inicial: 6
+Caracter: a    | linea: 1 | columna inicial: 7
+Caracter: d    | linea: 1 | columna inicial: 8
+Caracter:      | linea: 1 | columna inicial: 9
+Caracter: =    | linea: 1 | columna inicial: 10
+Caracter:      | linea: 1 | columna inicial: 11
+Caracter: 2    | linea: 1 | columna inicial: 12
+Caracter: 1    | linea: 1 | columna inicial: 13
+Caracter: ;    | linea: 1 | columna inicial: 14
+Caracter: \n   | linea: 1 | columna inicial: 15
+Caracter: c    | linea: 2 | columna inicial: 1
+Caracter: o    | linea: 2 | columna inicial: 2
+Caracter: n    | linea: 2 | columna inicial: 3
+Caracter: s    | linea: 2 | columna inicial: 4
+Caracter: t    | linea: 2 | columna inicial: 5
+Caracter:      | linea: 2 | columna inicial: 6
+Caracter: n    | linea: 2 | columna inicial: 7
+Caracter: o    | linea: 2 | columna inicial: 8
+Caracter: m    | linea: 2 | columna inicial: 9
+Caracter: b    | linea: 2 | columna inicial: 10
+Caracter: r    | linea: 2 | columna inicial: 11
+Caracter: e    | linea: 2 | columna inicial: 12
+Caracter:      | linea: 2 | columna inicial: 13
+Caracter: =    | linea: 2 | columna inicial: 14
+Caracter:      | linea: 2 | columna inicial: 15
+Caracter: "    | linea: 2 | columna inicial: 16
+Caracter: A    | linea: 2 | columna inicial: 17
+Caracter: n    | linea: 2 | columna inicial: 18
+Caracter: a    | linea: 2 | columna inicial: 19
+Caracter: "    | linea: 2 | columna inicial: 20
+Caracter: ;    | linea: 2 | columna inicial: 21
+Caracter: \n   | linea: 2 | columna inicial: 22
+Caracter: c    | linea: 3 | columna inicial: 1
+Caracter: o    | linea: 3 | columna inicial: 2
+Caracter: n    | linea: 3 | columna inicial: 3
+Caracter: s    | linea: 3 | columna inicial: 4
+Caracter: o    | linea: 3 | columna inicial: 5
+Caracter: l    | linea: 3 | columna inicial: 6
+Caracter: e    | linea: 3 | columna inicial: 7
+Caracter: .    | linea: 3 | columna inicial: 8
+Caracter: l    | linea: 3 | columna inicial: 9
+Caracter: o    | linea: 3 | columna inicial: 10
+Caracter: g    | linea: 3 | columna inicial: 11
+Caracter: (    | linea: 3 | columna inicial: 12
+Caracter: e    | linea: 3 | columna inicial: 13
+Caracter: d    | linea: 3 | columna inicial: 14
+Caracter: a    | linea: 3 | columna inicial: 15
+Caracter: d    | linea: 3 | columna inicial: 16
+Caracter: ,    | linea: 3 | columna inicial: 17
+Caracter:      | linea: 3 | columna inicial: 18
+Caracter: n    | linea: 3 | columna inicial: 19
+Caracter: o    | linea: 3 | columna inicial: 20
+Caracter: m    | linea: 3 | columna inicial: 21
+Caracter: b    | linea: 3 | columna inicial: 22
+Caracter: r    | linea: 3 | columna inicial: 23
+Caracter: e    | linea: 3 | columna inicial: 24
+Caracter: )    | linea: 3 | columna inicial: 25
+Caracter: ;    | linea: 3 | columna inicial: 26
+Caracter: \n   | linea: 3 | columna inicial: 27
+
+=== TABLA DE SIMBOLOS ===
+edad | primera aparicion: linea 1, columna 5
+nombre | primera aparicion: linea 2, columna 7
+Total de identificadores unicos: 2
