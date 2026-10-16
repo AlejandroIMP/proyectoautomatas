@@ -16,6 +16,7 @@ import java.util.List;
 %column
 %type Token
 %function yylex
+%state SIN_CIERRE
 
 %{
 private TablaSimbolos tablaSimbolos = new TablaSimbolos();
@@ -59,6 +60,11 @@ TemplateString = \`([^\\\`]|\\.)*\`
     {WhiteSpace}       { }
     {LineComment}      { }
     {BlockComment}     { }
+    "/*"               {
+        errores.add(new ErrorLexico(yytext(), yyline + 1, yycolumn + 1,
+                "Comentario de bloque sin cerrar"));
+        yybegin(SIN_CIERRE);
+    }
 
     "let"              { return token(TokenType.LET); }
     "const"            { return token(TokenType.CONST); }
@@ -116,4 +122,8 @@ TemplateString = \`([^\\\`]|\\.)*\`
         errores.add(new ErrorLexico(yytext(), yyline + 1, yycolumn + 1,
                 "Símbolo no perteneciente al alfabeto léxico"));
     }
+}
+
+<SIN_CIERRE> {
+    [^]                { }
 }
