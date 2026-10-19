@@ -1,9 +1,12 @@
 package com.analizador.reporte;
 
 import com.analizador.modelo.ErrorLexico;
+import com.analizador.modelo.ErrorSintactico;
 import com.analizador.modelo.TablaSimbolos;
 import com.analizador.modelo.Token;
 import com.analizador.modelo.TokenType;
+import com.analizador.sintactico.NodoAST;
+
 import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -14,7 +17,8 @@ import java.util.*;
 import java.util.stream.Collectors;
 
 /**
- * Generador de reportes contextualizados del análisis léxico en formatos HTML y Markdown.
+ * Generador de reportes contextualizados del análisis léxico y sintáctico en HTML y Markdown.
+ * Diseñado y mantenido por Alejandro (Módulo de Arquitectura y Reportes).
  */
 public final class GeneradorReporte {
 
@@ -33,6 +37,16 @@ public final class GeneradorReporte {
             int literales,
             Map<TokenType, Long> conteoPorTipo,
             List<TablaSimbolos.EntradaSimbolo> topIdentificadores
+    ) {}
+
+    public record MetricasSintacticas(
+            int totalSentencias,
+            int declaracionesVariables,
+            int sentenciasIf,
+            int sentenciasImpresion,
+            int asignaciones,
+            int sentenciasExpresion,
+            int totalErroresSintacticos
     ) {}
 
     public static MetricasReporte calcularMetricas(String codigoFuente, List<Token> tokens,
@@ -54,14 +68,14 @@ public final class GeneradorReporte {
 
         for (Token t : tokensReales) {
             switch (t.tipo()) {
-                case LET, CONST, VAR, FUNCTION, IF, ELSE, WHILE, FOR, RETURN, TRUE, FALSE, NULL -> reservadas++;
+                case LET, CONST, VAR, FUNCTION, IF, ELSE, WHILE, FOR, RETURN, TRUE, FALSE, NULL,
+                     PRINT, CONSOLE, LOG -> reservadas++;
                 case MAS, MENOS, MULT, DIV, MOD, ASIGNACION, INCREMENTO, DECREMENTO,
                      IGUAL_IGUAL, IGUAL_ESTRICTO, DIFERENTE, DIFERENTE_ESTRICTO,
                      MENOR, MAYOR, MENOR_IGUAL, MAYOR_IGUAL, AND, OR, NOT -> operadores++;
                 case PAREN_IZQ, PAREN_DER, LLAVE_IZQ, LLAVE_DER, CORCHETE_IZQ, CORCHETE_DER,
                      PUNTO_COMA, COMA, DOS_PUNTOS, PUNTO -> delimitadores++;
                 case LIT_ENTERO, LIT_FLOTANTE, LIT_CADENA, LIT_TEMPLATE -> literales++;
-                default -> {}
             }
         }
 
@@ -87,41 +101,87 @@ public final class GeneradorReporte {
         );
     }
 
-    /**
-     * Genera un reporte en HTML 3.2 ligero y compatible con el componente JEditorPane de Java Swing.
-     */
+    public static MetricasSintacticas calcularMetricasSintacticas(NodoAST ast, List<ErrorSintactico> erroresSintacticos) {
+        int decl = 0;
+        int ifs = 0;
+        int prints = 0;
+        int asigs = 0;
+        int exps = 0;
+        int total = 0;
+
+        if (ast instanceof NodoAST.Programa prog) {
+            total = prog.sentencias().size();
+            for (NodoAST s : prog.sentencias()) {
+                if (s instanceof NodoAST.DeclaracionVariable) decl++;
+                else if (s instanceof NodoAST.SentenciaIf) ifs++;
+                else if (s instanceof NodoAST.SentenciaImprimir) prints++;
+                else if (s instanceof NodoAST.Asignacion) asigs++;
+                else if (s instanceof NodoAST.SentenciaExpresion) exps++;
+            }
+        }
+
+        int errSint = (erroresSintacticos != null) ? erroresSintacticos.size() : 0;
+        return new MetricasSintacticas(total, decl, ifs, prints, asigs, exps, errSint);
+    }
+
     public static String generarHTMLParaSwing(String tituloArchivo, String codigoFuente, List<Token> tokens,
                                              TablaSimbolos tablaSimbolos, List<ErrorLexico> errores) {
+        return generarHTMLParaSwing(tituloArchivo, codigoFuente, tokens, tablaSimbolos, errores, List.of(), null);
+    }
+
+    /**
+     * Genera un reporte en HTML ligero compatible con JEditorPane que incluye métricas léxicas y sintácticas.
+     */
+    public static String generarHTMLParaSwing(String tituloArchivo, String codigoFuente, List<Token> tokens,
+                                             TablaSimbolos tablaSimbolos, List<ErrorLexico> errores,
+                                             List<ErrorSintactico> erroresSintacticos, NodoAST ast) {
         MetricasReporte m = calcularMetricas(codigoFuente, tokens, tablaSimbolos, errores);
+        MetricasSintacticas ms = calcularMetricasSintacticas(ast, erroresSintacticos);
         String fecha = LocalDateTime.now().format(DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm:ss"));
-        boolean tieneErrores = !errores.isEmpty();
+        boolean tieneErroresLexicos = !errores.isEmpty();
+        boolean tieneErroresSintacticos = erroresSintacticos != null && !erroresSintacticos.isEmpty();
 
         StringBuilder sb = new StringBuilder();
         sb.append("<html><body style='font-family: sans-serif; margin: 12px; color: #1e293b;'>");
 
+        // Cabecera
         sb.append("<table width='100%' cellpadding='8' cellspacing='0' bgcolor='#f8fafc' style='border: 1px solid #cbd5e1;'>");
         sb.append("<tr><td>");
-        sb.append("<h2 style='color: #1d4ed8; margin: 0 0 4px 0;'>Informe de Análisis Léxico</h2>");
+        sb.append("<h2 style='color: #1d4ed8; margin: 0 0 4px 0;'>Informe de Análisis Léxico y Sintáctico</h2>");
         sb.append("<font size='3' color='#64748b'><b>Archivo:</b> ").append(escaparHtml(tituloArchivo));
-        sb.append(" | <b>Fecha:</b> ").append(fecha).append("</font><br>");
-        if (tieneErrores) {
-            sb.append("<font color='#b91c1c'><b>ESTADO:</b> CON ERRORES LÉXICOS (").append(m.totalErrores()).append(" detectados)</font>");
+        sb.append(" | <b>Fecha:</b> ").append(fecha).append(" | <b>Generador:</b> JFlex 1.9.1 & JCUP 11b</font><br>");
+
+        if (!tieneErroresLexicos && !tieneErroresSintacticos) {
+            sb.append("<font color='#15803d'><b>ESTADO GLOBAL:</b> COMPILACIÓN EXITOSA (0 errores léxicos, 0 errores sintácticos)</font>");
         } else {
-            sb.append("<font color='#15803d'><b>ESTADO:</b> ANÁLISIS LÉXICO EXITOSO (0 errores)</font>");
+            sb.append("<font color='#b91c1c'><b>ESTADO GLOBAL:</b> DETECTADOS INCIDENTES (")
+              .append(m.totalErrores()).append(" léxicos, ")
+              .append(ms.totalErroresSintacticos()).append(" sintácticos)</font>");
         }
         sb.append("</td></tr></table><br>");
 
-        sb.append("<h3>1. Resumen Cuantitativo</h3>");
+        // Módulo 1 y 2: Métricas Cuantitativas
+        sb.append("<h3>1. Resumen Cuantitativo del Programa</h3>");
         sb.append("<table width='100%' cellpadding='6' cellspacing='0' border='1' bordercolor='#e2e8f0'>");
-        sb.append("<tr bgcolor='#f1f5f9'><th>Métrica</th><th>Valor</th><th>Categoría de Tokens</th><th>Cantidad</th></tr>");
-        sb.append("<tr><td>Líneas de Código:</td><td><b>").append(m.totalLineas()).append("</b></td><td>Palabras Reservadas:</td><td><b>").append(m.palabrasReservadas()).append("</b></td></tr>");
-        sb.append("<tr><td>Caracteres Totales:</td><td><b>").append(m.totalCaracteres()).append("</b></td><td>Identificadores Totales:</td><td><b>").append(m.totalOcurrenciasIdentificadores()).append("</b></td></tr>");
-        sb.append("<tr><td>Tokens Reconocidos:</td><td><b>").append(m.totalTokens()).append("</b></td><td>Operadores:</td><td><b>").append(m.operadores()).append("</b></td></tr>");
-        sb.append("<tr><td>Símbolos Únicos:</td><td><b>").append(m.totalIdentificadoresUnicos()).append("</b></td><td>Delimitadores:</td><td><b>").append(m.delimitadores()).append("</b></td></tr>");
-        sb.append("<tr><td>Errores Léxicos:</td><td><b>").append(tieneErrores ? "<font color='red'>" + m.totalErrores() + "</font>" : "<font color='green'>0</font>").append("</b></td><td>Literales:</td><td><b>").append(m.literales()).append("</b></td></tr>");
+        sb.append("<tr bgcolor='#f1f5f9'><th>Métrica Léxica</th><th>Valor</th><th>Métrica Sintáctica (AST)</th><th>Valor</th></tr>");
+        sb.append("<tr><td>Líneas de Código:</td><td><b>").append(m.totalLineas()).append("</b></td>");
+        sb.append("<td>Total Sentencias Raíz:</td><td><b>").append(ms.totalSentencias()).append("</b></td></tr>");
+
+        sb.append("<tr><td>Tokens Reconocidos:</td><td><b>").append(m.totalTokens()).append("</b></td>");
+        sb.append("<td>Declaraciones de Variables:</td><td><b>").append(ms.declaracionesVariables()).append("</b></td></tr>");
+
+        sb.append("<tr><td>Símbolos Únicos:</td><td><b>").append(m.totalIdentificadoresUnicos()).append("</b></td>");
+        sb.append("<td>Instrucciones IF / ELSE:</td><td><b>").append(ms.sentenciasIf()).append("</b></td></tr>");
+
+        sb.append("<tr><td>Palabras Reservadas:</td><td><b>").append(m.palabrasReservadas()).append("</b></td>");
+        sb.append("<td>Instrucciones de Impresión:</td><td><b>").append(ms.sentenciasImpresion()).append("</b></td></tr>");
+
+        sb.append("<tr><td>Errores Léxicos:</td><td><b>").append(tieneErroresLexicos ? "<font color='red'>" + m.totalErrores() + "</font>" : "<font color='green'>0</font>").append("</b></td>");
+        sb.append("<td>Errores Sintácticos:</td><td><b>").append(tieneErroresSintacticos ? "<font color='red'>" + ms.totalErroresSintacticos() + "</font>" : "<font color='green'>0</font>").append("</b></td></tr>");
         sb.append("</table><br>");
 
-        if (tieneErrores) {
+        // Errores Léxicos
+        if (tieneErroresLexicos) {
             sb.append("<h3 style='color: #b91c1c;'>2. Errores Léxicos Identificados</h3>");
             sb.append("<table width='100%' cellpadding='6' cellspacing='0' border='1' bordercolor='#fca5a5'>");
             sb.append("<tr bgcolor='#fee2e2'><th>#</th><th>Lexema Inválido</th><th>Línea</th><th>Columna</th><th>Descripción</th></tr>");
@@ -136,35 +196,61 @@ public final class GeneradorReporte {
             sb.append("</table><br>");
         }
 
-        sb.append("<h3>").append(tieneErrores ? "3" : "2").append(". Diagnóstico para la Fase Sintáctica</h3>");
-        sb.append("<table width='100%' cellpadding='8' cellspacing='0' bgcolor='").append(tieneErrores ? "#fffbeb" : "#f0fdf4").append("' style='border: 1px solid ").append(tieneErrores ? "#fde68a" : "#bbf7d0").append(";'>");
+        // Errores Sintácticos
+        if (tieneErroresSintacticos) {
+            sb.append("<h3 style='color: #b91c1c;'>3. Errores Sintácticos Identificados (JCUP)</h3>");
+            sb.append("<table width='100%' cellpadding='6' cellspacing='0' border='1' bordercolor='#fca5a5'>");
+            sb.append("<tr bgcolor='#fee2e2'><th>#</th><th>Token Inesperado</th><th>Línea</th><th>Columna</th><th>Descripción</th></tr>");
+            int j = 1;
+            for (ErrorSintactico err : erroresSintacticos) {
+                sb.append("<tr><td>").append(j++).append("</td>");
+                sb.append("<td><font color='red'><b>").append(escaparHtml(err.tokenEncontrado())).append("</b></font></td>");
+                sb.append("<td>").append(err.linea()).append("</td>");
+                sb.append("<td>").append(err.columna()).append("</td>");
+                sb.append("<td>").append(escaparHtml(err.descripcion())).append("</td></tr>");
+            }
+            sb.append("</table><br>");
+        }
+
+        // Diagnóstico Final
+        sb.append("<h3>Diagnóstico Integral del Compilador</h3>");
+        sb.append("<table width='100%' cellpadding='8' cellspacing='0' bgcolor='")
+          .append((tieneErroresLexicos || tieneErroresSintacticos) ? "#fffbeb" : "#f0fdf4")
+          .append("' style='border: 1px solid ")
+          .append((tieneErroresLexicos || tieneErroresSintacticos) ? "#fde68a" : "#bbf7d0")
+          .append(";'>");
         sb.append("<tr><td>");
-        if (tieneErrores) {
-            sb.append("<font color='#92400e'><b>Atención:</b> Existen caracteres fuera del alfabeto. Corrija los errores léxicos para que el flujo de tokens sea consumido limpiamente por el Parser sintáctico.</font>");
+        if (tieneErroresLexicos || tieneErroresSintacticos) {
+            sb.append("<font color='#92400e'><b>Atención:</b> El código contiene incidentes gramaticales. Revise las tablas inferiores para ubicar línea y columna.</font>");
         } else {
-            sb.append("<font color='#166534'><b>Excelente:</b> El código fuente fue tokenizado en su totalidad sin infracciones al alfabeto léxico. El flujo de ").append(m.totalTokens()).append(" tokens se encuentra listo para el análisis sintáctico (Parser LL(1)).</font>");
+            sb.append("<font color='#166534'><b>Excelente:</b> El código fuente cumple al 100% las especificaciones léxicas y la gramática LALR(1) definida en JCUP. El Árbol Sintáctico (AST) se generó correctamente.</font>");
         }
         sb.append("</td></tr></table>");
 
-        sb.append("<br><font size='2' color='#94a3b8'>Haga clic en 'Exportar Reporte' en la barra superior para guardar el informe completo con gráficos y código en formato HTML o Markdown.</font>");
+        sb.append("<br><font size='2' color='#94a3b8'>Puede consultar el árbol jerárquico en la pestaña 'Árbol Sintáctico (AST)' o exportar el reporte completo en HTML/Markdown.</font>");
         sb.append("</body></html>");
         return sb.toString();
     }
 
-    /**
-     * Genera un reporte completo en HTML5 moderno con estilos CSS incrustados.
-     */
     public static String generarHTML(String tituloArchivo, String codigoFuente, List<Token> tokens,
                                      TablaSimbolos tablaSimbolos, List<ErrorLexico> errores) {
+        return generarHTML(tituloArchivo, codigoFuente, tokens, tablaSimbolos, errores, List.of(), null);
+    }
+
+    public static String generarHTML(String tituloArchivo, String codigoFuente, List<Token> tokens,
+                                     TablaSimbolos tablaSimbolos, List<ErrorLexico> errores,
+                                     List<ErrorSintactico> erroresSintacticos, NodoAST ast) {
         MetricasReporte m = calcularMetricas(codigoFuente, tokens, tablaSimbolos, errores);
+        MetricasSintacticas ms = calcularMetricasSintacticas(ast, erroresSintacticos);
         String fecha = LocalDateTime.now().format(DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm:ss"));
-        boolean tieneErrores = !errores.isEmpty();
+        boolean tieneErroresLexicos = !errores.isEmpty();
+        boolean tieneErroresSintacticos = erroresSintacticos != null && !erroresSintacticos.isEmpty();
 
         StringBuilder sb = new StringBuilder();
         sb.append("<!DOCTYPE html>\n<html lang=\"es\">\n<head>\n");
         sb.append("<meta charset=\"UTF-8\">\n");
         sb.append("<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n");
-        sb.append("<title>Reporte de Análisis Léxico - ").append(escaparHtml(tituloArchivo)).append("</title>\n");
+        sb.append("<title>Reporte de Análisis Léxico y Sintáctico - ").append(escaparHtml(tituloArchivo)).append("</title>\n");
         sb.append("<style>\n");
         sb.append(":root { --primary: #2563eb; --primary-dark: #1d4ed8; --success: #16a34a; --danger: #dc2626; --warning: #d97706; --bg: #f8fafc; --card: #ffffff; --text: #1e293b; --border: #e2e8f0; }\n");
         sb.append("* { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; }\n");
@@ -203,33 +289,34 @@ public final class GeneradorReporte {
 
         // Encabezado
         sb.append("  <div class=\"header\">\n");
-        sb.append("    <h1>Reporte Contextual de Análisis Léxico</h1>\n");
+        sb.append("    <h1>Reporte Contextual de Análisis Léxico y Sintáctico</h1>\n");
         sb.append("    <div class=\"meta\">\n");
         sb.append("      <div><strong>Archivo/Origen:</strong> ").append(escaparHtml(tituloArchivo)).append("</div>\n");
         sb.append("      <div><strong>Fecha de Análisis:</strong> ").append(fecha).append("</div>\n");
-        sb.append("      <div><strong>Motor Léxico:</strong> JFlex 1.9.1 (Java 21 LTS)</div>\n");
+        sb.append("      <div><strong>Herramientas:</strong> JFlex 1.9.1 & Java CUP 11b (Java 21 LTS)</div>\n");
         sb.append("    </div>\n");
-        if (tieneErrores) {
-            sb.append("    <div class=\"status-badge status-err\">Estado: Con Errores Léxicos (").append(m.totalErrores()).append(")</div>\n");
+        if (tieneErroresLexicos || tieneErroresSintacticos) {
+            sb.append("    <div class=\"status-badge status-err\">Estado: Con Incidentes (")
+              .append(m.totalErrores()).append(" Léxicos, ").append(ms.totalErroresSintacticos()).append(" Sintácticos)</div>\n");
         } else {
-            sb.append("    <div class=\"status-badge status-ok\">Estado: Análisis Léxico Exitoso (0 Errores)</div>\n");
+            sb.append("    <div class=\"status-badge status-ok\">Estado: Compilación Exitosa (0 Errores)</div>\n");
         }
         sb.append("  </div>\n");
 
-        // Métricas en tarjetas
+        // Tarjetas
         sb.append("  <div class=\"grid-cards\">\n");
         sb.append("    <div class=\"card\"><div class=\"title\">Tokens Reconocidos</div><div class=\"value\">").append(m.totalTokens()).append("</div></div>\n");
-        sb.append("    <div class=\"card\"><div class=\"title\">Identificadores Únicos</div><div class=\"value\">").append(m.totalIdentificadoresUnicos()).append("</div></div>\n");
-        sb.append("    <div class=\"card\"><div class=\"title\">Líneas de Código</div><div class=\"value\">").append(m.totalLineas()).append("</div></div>\n");
-        sb.append("    <div class=\"card\"><div class=\"title\">Palabras Reservadas</div><div class=\"value\">").append(m.palabrasReservadas()).append("</div></div>\n");
-        sb.append("    <div class=\"card").append(tieneErrores ? " danger" : "").append("\"><div class=\"title\">Errores Léxicos</div><div class=\"value\">").append(m.totalErrores()).append("</div></div>\n");
+        sb.append("    <div class=\"card\"><div class=\"title\">Sentencias AST</div><div class=\"value\">").append(ms.totalSentencias()).append("</div></div>\n");
+        sb.append("    <div class=\"card\"><div class=\"title\">Declaraciones Variables</div><div class=\"value\">").append(ms.declaracionesVariables()).append("</div></div>\n");
+        sb.append("    <div class=\"card\"><div class=\"title\">Instrucciones IF</div><div class=\"value\">").append(ms.sentenciasIf()).append("</div></div>\n");
+        sb.append("    <div class=\"card\"><div class=\"title\">Impresiones Pantalla</div><div class=\"value\">").append(ms.sentenciasImpresion()).append("</div></div>\n");
+        sb.append("    <div class=\"card").append(tieneErroresLexicos || tieneErroresSintacticos ? " danger" : "").append("\"><div class=\"title\">Errores Totales</div><div class=\"value\">").append(m.totalErrores() + ms.totalErroresSintacticos()).append("</div></div>\n");
         sb.append("  </div>\n");
 
-        // Sección de Errores (si los hay)
-        if (tieneErrores) {
+        // Errores Léxicos
+        if (tieneErroresLexicos) {
             sb.append("  <div class=\"section\">\n");
             sb.append("    <h2 style=\"color: var(--danger);\">⚠️ Incidentes Léxicos Detectados</h2>\n");
-            sb.append("    <p>Se detectaron caracteres o secuencias que no forman parte del alfabeto del lenguaje JavaScript:</p>\n");
             sb.append("    <table>\n");
             sb.append("      <thead><tr><th>#</th><th>Carácter Inválido</th><th>Línea</th><th>Columna</th><th>Descripción</th></tr></thead>\n");
             sb.append("      <tbody>\n");
@@ -245,20 +332,39 @@ public final class GeneradorReporte {
             }
             sb.append("      </tbody>\n");
             sb.append("    </table>\n");
-            sb.append("    <div class=\"callout callout-warning\">\n");
-            sb.append("      <strong>Nota para la siguiente fase:</strong> El analizador sintáctico (Parser) requiere que estos símbolos sean corregidos para construir el árbol de sintaxis abstracta (AST) sin fallos estructurales.\n");
-            sb.append("    </div>\n");
             sb.append("  </div>\n");
         }
 
-        // Distribución léxica
+        // Errores Sintácticos
+        if (tieneErroresSintacticos) {
+            sb.append("  <div class=\"section\">\n");
+            sb.append("    <h2 style=\"color: var(--danger);\">⚠️ Incidentes Sintácticos Detectados (JCUP)</h2>\n");
+            sb.append("    <table>\n");
+            sb.append("      <thead><tr><th>#</th><th>Token Inesperado</th><th>Línea</th><th>Columna</th><th>Descripción</th></tr></thead>\n");
+            sb.append("      <tbody>\n");
+            int errSIdx = 1;
+            for (ErrorSintactico err : erroresSintacticos) {
+                sb.append("        <tr>\n");
+                sb.append("          <td>").append(errSIdx++).append("</td>\n");
+                sb.append("          <td><span class=\"tag tag-err\">").append(escaparHtml(err.tokenEncontrado())).append("</span></td>\n");
+                sb.append("          <td>").append(err.linea()).append("</td>\n");
+                sb.append("          <td>").append(err.columna()).append("</td>\n");
+                sb.append("          <td>").append(escaparHtml(err.descripcion())).append("</td>\n");
+                sb.append("        </tr>\n");
+            }
+            sb.append("      </tbody>\n");
+            sb.append("    </table>\n");
+            sb.append("  </div>\n");
+        }
+
+        // Distribución Léxica
         sb.append("  <div class=\"section\">\n");
         sb.append("    <h2>Distribución y Clasificación de Tokens</h2>\n");
         sb.append("    <table>\n");
         sb.append("      <thead><tr><th>Categoría</th><th>Cantidad</th><th>Porcentaje</th><th>Descripción</th></tr></thead>\n");
         sb.append("      <tbody>\n");
         int totalT = Math.max(1, m.totalTokens());
-        agregarFilaDistribucion(sb, "Palabras Reservadas", m.palabrasReservadas(), totalT, "Palabras clave del lenguaje (let, const, function, if, while...)");
+        agregarFilaDistribucion(sb, "Palabras Reservadas", m.palabrasReservadas(), totalT, "Palabras clave del lenguaje (let, const, function, if, print...)");
         agregarFilaDistribucion(sb, "Identificadores", m.totalOcurrenciasIdentificadores(), totalT, "Nombres de variables, funciones y referencias");
         agregarFilaDistribucion(sb, "Operadores", m.operadores(), totalT, "Operadores aritméticos, relacionales, lógicos y asignación");
         agregarFilaDistribucion(sb, "Delimitadores", m.delimitadores(), totalT, "Signos de puntuación, paréntesis, llaves, corchetes y punto y coma");
@@ -291,6 +397,14 @@ public final class GeneradorReporte {
         }
         sb.append("  </div>\n");
 
+        // Estructura del AST si existe
+        if (ast != null) {
+            sb.append("  <div class=\"section\">\n");
+            sb.append("    <h2>Representación Textual del Árbol Sintáctico (AST)</h2>\n");
+            sb.append("    <pre class=\"code-snippet\"><code>").append(escaparHtml(formatearAST(ast, 0))).append("</code></pre>\n");
+            sb.append("  </div>\n");
+        }
+
         // Flujo Completo de Tokens
         sb.append("  <div class=\"section\">\n");
         sb.append("    <h2>Flujo Completo de Tokens Reconocidos</h2>\n");
@@ -312,58 +426,59 @@ public final class GeneradorReporte {
         sb.append("    </table>\n");
         sb.append("  </div>\n");
 
-        // Código Fuente Analizado
+        // Código Fuente
         sb.append("  <div class=\"section\">\n");
         sb.append("    <h2>Código Fuente Analizado</h2>\n");
         sb.append("    <pre class=\"code-snippet\"><code>").append(escaparHtml(codigoFuente)).append("</code></pre>\n");
-        sb.append("  </div>\n");
-
-        // Conclusión del análisis
-        sb.append("  <div class=\"callout callout-info\">\n");
-        sb.append("    <strong>Diagnóstico del Nivel Léxico:</strong> ");
-        if (tieneErrores) {
-            sb.append("El código contiene ").append(m.totalErrores()).append(" símbolo(s) ilegales que deben corregirse. La fase léxica completó la recuperación y aisló los componentes gramaticales restantes.");
-        } else {
-            sb.append("El archivo presenta consistencia léxica total. Se reconocieron ").append(m.totalTokens()).append(" tokens válidos y ").append(m.totalIdentificadoresUnicos()).append(" identificadores únicos, encontrándose apto para la fase sintáctica (Parser).");
-        }
         sb.append("  </div>\n");
 
         sb.append("</div>\n</body>\n</html>");
         return sb.toString();
     }
 
-    /**
-     * Genera un reporte estructurado en formato Markdown (.md).
-     */
     public static String generarMarkdown(String tituloArchivo, String codigoFuente, List<Token> tokens,
                                          TablaSimbolos tablaSimbolos, List<ErrorLexico> errores) {
+        return generarMarkdown(tituloArchivo, codigoFuente, tokens, tablaSimbolos, errores, List.of(), null);
+    }
+
+    public static String generarMarkdown(String tituloArchivo, String codigoFuente, List<Token> tokens,
+                                         TablaSimbolos tablaSimbolos, List<ErrorLexico> errores,
+                                         List<ErrorSintactico> erroresSintacticos, NodoAST ast) {
         MetricasReporte m = calcularMetricas(codigoFuente, tokens, tablaSimbolos, errores);
+        MetricasSintacticas ms = calcularMetricasSintacticas(ast, erroresSintacticos);
         String fecha = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
-        boolean tieneErrores = !errores.isEmpty();
+        boolean tieneErroresLexicos = !errores.isEmpty();
+        boolean tieneErroresSintacticos = erroresSintacticos != null && !erroresSintacticos.isEmpty();
 
         StringBuilder sb = new StringBuilder();
-        sb.append("# Reporte de Análisis Léxico - JavaScript\n\n");
+        if (ast != null || tieneErroresSintacticos) {
+            sb.append("# Reporte de Análisis Léxico y Sintáctico - JavaScript\n\n");
+        } else {
+            sb.append("# Reporte de Análisis Léxico - JavaScript\n\n");
+        }
         sb.append("**Archivo/Origen:** `").append(tituloArchivo).append("`  \n");
         sb.append("**Fecha de Generación:** ").append(fecha).append("  \n");
-        sb.append("**Estado:** ").append(tieneErrores ? "⚠️ CON ERRORES LÉXICOS (" + m.totalErrores() + ")" : "✅ ANÁLISIS LÉXICO EXITOSO").append("  \n");
-        sb.append("**Herramienta:** JFlex 1.9.1 / Java 21 (LTS)\n\n");
+        sb.append("**Estado:** ").append(tieneErroresLexicos || tieneErroresSintacticos
+                ? "⚠️ CON INCIDENTES (" + (m.totalErrores() + ms.totalErroresSintacticos()) + ")"
+                : "✅ COMPILACIÓN EXITOSA").append("  \n");
+        sb.append("**Herramientas:** JFlex 1.9.1 / JCUP 11b / Java 21 (LTS)\n\n");
         sb.append("---\n\n");
 
-        sb.append("## 1. Resumen Estadístico\n\n");
+        sb.append("## 1. Resumen Estadístico Integral\n\n");
         sb.append("| Métrica | Valor |\n");
         sb.append("|---|---:|\n");
         sb.append("| Total de Líneas de Código | ").append(m.totalLineas()).append(" |\n");
         sb.append("| Total de Caracteres | ").append(m.totalCaracteres()).append(" |\n");
         sb.append("| Total de Tokens Reconocidos | ").append(m.totalTokens()).append(" |\n");
         sb.append("| Identificadores Únicos en Tabla de Símbolos | ").append(m.totalIdentificadoresUnicos()).append(" |\n");
-        sb.append("| Ocurrencias Totales de Identificadores | ").append(m.totalOcurrenciasIdentificadores()).append(" |\n");
-        sb.append("| Palabras Reservadas Identificadas | ").append(m.palabrasReservadas()).append(" |\n");
-        sb.append("| Operadores (Aritméticos, Lógicos, Relacionales) | ").append(m.operadores()).append(" |\n");
-        sb.append("| Delimitadores y Puntuación | ").append(m.delimitadores()).append(" |\n");
-        sb.append("| Literales (Números, Cadenas, Booleanos) | ").append(m.literales()).append(" |\n");
-        sb.append("| Errores Léxicos Detectados | **").append(m.totalErrores()).append("** |\n\n");
+        sb.append("| Total Sentencias Sintácticas (AST) | ").append(ms.totalSentencias()).append(" |\n");
+        sb.append("| Declaraciones de Variables (`let`, `const`, `var`) | ").append(ms.declaracionesVariables()).append(" |\n");
+        sb.append("| Sentencias Condicionales `IF` / `ELSE` | ").append(ms.sentenciasIf()).append(" |\n");
+        sb.append("| Instrucciones de Impresión (`console.log`, `print`) | ").append(ms.sentenciasImpresion()).append(" |\n");
+        sb.append("| Errores Léxicos Detectados | **").append(m.totalErrores()).append("** |\n");
+        sb.append("| Errores Sintácticos Detectados (JCUP) | **").append(ms.totalErroresSintacticos()).append("** |\n\n");
 
-        if (tieneErrores) {
+        if (tieneErroresLexicos) {
             sb.append("## 2. Errores Léxicos Detectados\n\n");
             sb.append("| # | Lexema Inválido | Línea | Columna | Descripción |\n");
             sb.append("|---|---|---:|---:|---|\n");
@@ -373,11 +488,30 @@ public final class GeneradorReporte {
                   .append(err.linea()).append(" | ").append(err.columna()).append(" | ")
                   .append(err.descripcion()).append(" |\n");
             }
-            sb.append("\n> [!WARNING]\n");
-            sb.append("> Los símbolos listados no forman parte del alfabeto regular de JavaScript. Deben corregirse antes de proceder a la fase de análisis sintáctico.\n\n");
+            sb.append("\n");
+        }
+
+        if (tieneErroresSintacticos) {
+            sb.append("### Errores Sintácticos Detectados (JCUP)\n\n");
+            sb.append("| # | Token Inesperado | Línea | Columna | Descripción |\n");
+            sb.append("|---|---|---:|---:|---|\n");
+            int esIdx = 1;
+            for (ErrorSintactico err : erroresSintacticos) {
+                sb.append("| ").append(esIdx++).append(" | `").append(err.tokenEncontrado()).append("` | ")
+                  .append(err.linea()).append(" | ").append(err.columna()).append(" | ")
+                  .append(err.descripcion()).append(" |\n");
+            }
+            sb.append("\n");
         }
 
         sb.append("## 3. Tabla de Símbolos\n\n");
+
+        if (ast != null) {
+            sb.append("## 4. Estructura Jerárquica del AST\n\n");
+            sb.append("```text\n").append(formatearAST(ast, 0)).append("\n```\n\n");
+        }
+
+        sb.append("## 5. Tabla de Símbolos\n\n");
         var simbolos = tablaSimbolos.obtenerTodos();
         if (simbolos.isEmpty()) {
             sb.append("_No se registraron identificadores._\n\n");
@@ -392,29 +526,74 @@ public final class GeneradorReporte {
             sb.append("\n");
         }
 
-        sb.append("## 4. Flujo Detallado de Tokens\n\n");
-        sb.append("| # | Token | Lexema | Línea | Columna | Valor Literal |\n");
-        sb.append("|---|---|---|---:|---:|---|\n");
-        int tokIdx = 1;
-        for (Token t : tokens) {
-            sb.append("| ").append(tokIdx++).append(" | `").append(t.tipo()).append("` | `")
-              .append(t.lexema().replace("`", "\\`")).append("` | ").append(t.linea()).append(" | ")
-              .append(t.columna()).append(" | ").append(t.valorLiteral() != null ? t.valorLiteral() : "-").append(" |\n");
-        }
-        sb.append("\n");
-
-        sb.append("## 5. Código Fuente Analizado\n\n");
+        sb.append("## 6. Código Fuente Analizado\n\n");
         sb.append("```javascript\n").append(codigoFuente).append("\n```\n\n");
 
-        sb.append("---\n*Reporte generado automáticamente por Analizador Léxico JS (Java 21)*\n");
+        sb.append("---\n*Reporte generado automáticamente por Analizador Léxico y Sintáctico JS (Java 21)*\n");
         return sb.toString();
     }
 
-    /**
-     * Guarda el reporte generado en el archivo destino especificado.
-     */
     public static void guardarEnArchivo(File archivoDestino, String contenido) throws IOException {
         Files.writeString(archivoDestino.toPath(), contenido, StandardCharsets.UTF_8);
+    }
+
+    private static String formatearAST(NodoAST nodo, int nivel) {
+        if (nodo == null) return "";
+        String indent = "  ".repeat(nivel);
+        StringBuilder sb = new StringBuilder();
+
+        if (nodo instanceof NodoAST.Programa prog) {
+            sb.append(indent).append("Programa (").append(prog.sentencias().size()).append(" sentencias)\n");
+            for (NodoAST s : prog.sentencias()) {
+                sb.append(formatearAST(s, nivel + 1));
+            }
+        } else if (nodo instanceof NodoAST.DeclaracionVariable decl) {
+            sb.append(indent).append("DeclaracionVariable [").append(decl.tipoDeclaracion()).append(" ").append(decl.identificador()).append("]\n");
+            if (decl.valorInicial() != null) {
+                sb.append(indent).append("  └── ValorInicial:\n");
+                sb.append(formatearAST(decl.valorInicial(), nivel + 2));
+            }
+        } else if (nodo instanceof NodoAST.Asignacion asig) {
+            sb.append(indent).append("Asignacion [").append(asig.identificador()).append(" = ]\n");
+            if (asig.valor() != null) {
+                sb.append(formatearAST(asig.valor(), nivel + 1));
+            }
+        } else if (nodo instanceof NodoAST.SentenciaIf sif) {
+            sb.append(indent).append("SentenciaIf\n");
+            sb.append(indent).append("  ├── Condicion:\n");
+            sb.append(formatearAST(sif.condicion(), nivel + 2));
+            sb.append(indent).append("  ├── RamaThen:\n");
+            sb.append(formatearAST(sif.bloqueThen(), nivel + 2));
+            if (sif.bloqueElse() != null) {
+                sb.append(indent).append("  └── RamaElse:\n");
+                sb.append(formatearAST(sif.bloqueElse(), nivel + 2));
+            }
+        } else if (nodo instanceof NodoAST.SentenciaImprimir simp) {
+            sb.append(indent).append("SentenciaImprimir [").append(simp.funcion()).append("] (").append(simp.argumentos().size()).append(" args)\n");
+            for (NodoAST arg : simp.argumentos()) {
+                sb.append(formatearAST(arg, nivel + 1));
+            }
+        } else if (nodo instanceof NodoAST.Bloque blk) {
+            sb.append(indent).append("Bloque { ... } (").append(blk.sentencias().size()).append(" sentencias)\n");
+            for (NodoAST s : blk.sentencias()) {
+                sb.append(formatearAST(s, nivel + 1));
+            }
+        } else if (nodo instanceof NodoAST.ExpresionBinaria bin) {
+            sb.append(indent).append("ExpresionBinaria (").append(bin.operador()).append(")\n");
+            sb.append(formatearAST(bin.izquierda(), nivel + 1));
+            sb.append(formatearAST(bin.derecha(), nivel + 1));
+        } else if (nodo instanceof NodoAST.ExpresionUnaria un) {
+            sb.append(indent).append("ExpresionUnaria (").append(un.operador()).append(")\n");
+            sb.append(formatearAST(un.expresion(), nivel + 1));
+        } else if (nodo instanceof NodoAST.Literal lit) {
+            sb.append(indent).append("Literal (").append(lit.tipo()).append("): ").append(lit.valor()).append("\n");
+        } else if (nodo instanceof NodoAST.Identificador id) {
+            sb.append(indent).append("Identificador: ").append(id.nombre()).append("\n");
+        } else if (nodo instanceof NodoAST.SentenciaExpresion sexp) {
+            sb.append(indent).append("SentenciaExpresion:\n");
+            sb.append(formatearAST(sexp.expresion(), nivel + 1));
+        }
+        return sb.toString();
     }
 
     private static void agregarFilaDistribucion(StringBuilder sb, String categoria, int cant, int total, String desc) {
@@ -429,22 +608,23 @@ public final class GeneradorReporte {
 
     private static String obtenerClaseTag(TokenType tipo) {
         return switch (tipo) {
-            case LET, CONST, VAR, FUNCTION, IF, ELSE, WHILE, FOR, RETURN, TRUE, FALSE, NULL -> "tag-kw";
+            case LET, CONST, VAR, FUNCTION, IF, ELSE, WHILE, FOR, RETURN, TRUE, FALSE, NULL,
+                 PRINT, CONSOLE, LOG -> "tag-kw";
             case ID -> "tag-id";
-            case LIT_ENTERO, LIT_FLOTANTE, LIT_CADENA, LIT_TEMPLATE -> "tag-lit";
             case MAS, MENOS, MULT, DIV, MOD, ASIGNACION, INCREMENTO, DECREMENTO,
                  IGUAL_IGUAL, IGUAL_ESTRICTO, DIFERENTE, DIFERENTE_ESTRICTO,
                  MENOR, MAYOR, MENOR_IGUAL, MAYOR_IGUAL, AND, OR, NOT -> "tag-op";
+            case LIT_ENTERO, LIT_FLOTANTE, LIT_CADENA, LIT_TEMPLATE -> "tag-lit";
             default -> "";
         };
     }
 
-    private static String escaparHtml(String input) {
-        if (input == null) return "";
-        return input.replace("&", "&amp;")
-                    .replace("<", "&lt;")
-                    .replace(">", "&gt;")
-                    .replace("\"", "&quot;")
-                    .replace("'", "&#39;");
+    private static String escaparHtml(String texto) {
+        if (texto == null) return "";
+        return texto.replace("&", "&amp;")
+                .replace("<", "&lt;")
+                .replace(">", "&gt;")
+                .replace("\"", "&quot;")
+                .replace("'", "&#39;");
     }
 }

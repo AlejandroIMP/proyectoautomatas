@@ -1,22 +1,22 @@
 package com.analizador.gui;
 
-import com.analizador.lexico.AnalizadorLexicoJS;
 import com.analizador.modelo.ErrorLexico;
 import com.analizador.modelo.ErrorSintactico;
 import com.analizador.modelo.TablaSimbolos;
 import com.analizador.modelo.Token;
 import com.analizador.reporte.GeneradorReporte;
-import com.analizador.sintactico.AnalizadorSintacticoJS;
+import com.analizador.servicio.CompiladorJS;
 import com.analizador.sintactico.NodoAST;
-import com.analizador.sintactico.TokenStream;
 
 import java.awt.BorderLayout;
 import java.awt.Desktop;
+import java.awt.FlowLayout;
 import java.awt.Font;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
 import java.io.File;
 import java.io.InputStream;
 import java.io.InputStreamReader;
-import java.io.StringReader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -29,6 +29,7 @@ import javax.swing.JEditorPane;
 import javax.swing.JFileChooser;
 import javax.swing.JFrame;
 import javax.swing.JOptionPane;
+import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JSplitPane;
 import javax.swing.JTabbedPane;
@@ -41,6 +42,10 @@ import javax.swing.table.DefaultTableModel;
 import javax.swing.tree.DefaultMutableTreeNode;
 import javax.swing.tree.DefaultTreeModel;
 
+/**
+ * Interfaz Gráfica de Usuario Integrada (Módulo de Alejandro - Arquitectura y GUI).
+ * Conecta el pipeline de compilación (JFlex + JCUP), visualización de AST y navegación de errores.
+ */
 public class VentanaPrincipal extends JFrame {
 
     private static final String[] DIFICULTADES = {
@@ -66,6 +71,7 @@ public class VentanaPrincipal extends JFrame {
     private TablaSimbolos ultimaTabla = new TablaSimbolos();
     private List<ErrorLexico> ultimosErrores = new ArrayList<>();
     private List<ErrorSintactico> ultimosErroresSintacticos = new ArrayList<>();
+    private NodoAST ultimoAst = null;
 
     private final JTextArea fuente = new JTextArea();
     private final JEditorPane vistaReporte = new JEditorPane("text/html", "");
@@ -108,7 +114,7 @@ public class VentanaPrincipal extends JFrame {
     public VentanaPrincipal() {
         super("Analizador Léxico y Sintáctico JS - Java 21, JFlex & JCUP");
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-        setSize(1250, 780);
+        setSize(1260, 780);
         setLocationRelativeTo(null);
 
         fuente.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 14));
@@ -119,7 +125,8 @@ public class VentanaPrincipal extends JFrame {
         JButton cargar = new JButton("Cargar .js");
         cargar.addActionListener(e -> cargarArchivo());
 
-        JButton ejecutar = new JButton("Ejecutar Análisis Completo");
+        JButton ejecutar = new JButton("▶ Ejecutar Análisis Completo");
+        ejecutar.setFont(ejecutar.getFont().deriveFont(Font.BOLD));
         ejecutar.addActionListener(e -> analizar());
 
         JButton exportar = new JButton("Exportar Reporte");
@@ -138,21 +145,65 @@ public class VentanaPrincipal extends JFrame {
         barra.addSeparator();
         barra.add(exportar);
 
+        // Panel del AST con botones para expandir y colapsar
+        JPanel panelAst = new JPanel(new BorderLayout());
+        JToolBar barraAst = new JToolBar();
+        barraAst.setFloatable(false);
+        JButton btnExpandir = new JButton("Expandir Todo");
+        btnExpandir.addActionListener(e -> expandirArbol(true));
+        JButton btnColapsar = new JButton("Colapsar Todo");
+        btnColapsar.addActionListener(e -> expandirArbol(false));
+        barraAst.add(btnExpandir);
+        barraAst.add(btnColapsar);
+        panelAst.add(barraAst, BorderLayout.NORTH);
+        panelAst.add(new JScrollPane(arbolSintactico), BorderLayout.CENTER);
+
         JTabbedPane resultados = new JTabbedPane();
         resultados.addTab("Flujo de Tokens", new JScrollPane(new JTable(tokens)));
         resultados.addTab("Tabla de Símbolos", new JScrollPane(new JTable(simbolos)));
         resultados.addTab("Informe Ejecutivo", new JScrollPane(vistaReporte));
-        resultados.addTab("Árbol Sintáctico (AST)", new JScrollPane(arbolSintactico));
+        resultados.addTab("Árbol Sintáctico (AST)", panelAst);
 
         JSplitPane centro = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT,
                 new JScrollPane(fuente), resultados);
         centro.setResizeWeight(0.42);
 
+        // Tablas de Errores con navegación automática al editor al hacer clic
+        JTable tablaErroresLexicos = new JTable(errores);
+        tablaErroresLexicos.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mouseClicked(MouseEvent e) {
+                int fila = tablaErroresLexicos.getSelectedRow();
+                if (fila >= 0) {
+                    try {
+                        int linea = Integer.parseInt(tablaErroresLexicos.getValueAt(fila, 1).toString());
+                        int col = Integer.parseInt(tablaErroresLexicos.getValueAt(fila, 2).toString());
+                        irALinea(linea, col);
+                    } catch (Exception ignored) {}
+                }
+            }
+        });
+
+        JTable tablaErroresSintacticos = new JTable(erroresSintacticos);
+        tablaErroresSintacticos.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mouseClicked(MouseEvent e) {
+                int fila = tablaErroresSintacticos.getSelectedRow();
+                if (fila >= 0) {
+                    try {
+                        int linea = Integer.parseInt(tablaErroresSintacticos.getValueAt(fila, 1).toString());
+                        int col = Integer.parseInt(tablaErroresSintacticos.getValueAt(fila, 2).toString());
+                        irALinea(linea, col);
+                    } catch (Exception ignored) {}
+                }
+            }
+        });
+
         JTabbedPane consolaErrores = new JTabbedPane();
-        consolaErrores.addTab("Errores Léxicos", new JScrollPane(new JTable(errores)));
-        consolaErrores.addTab("Errores Sintácticos (JCUP)", new JScrollPane(new JTable(erroresSintacticos)));
-        consolaErrores.setPreferredSize(new java.awt.Dimension(100, 170));
-        consolaErrores.setBorder(BorderFactory.createTitledBorder("Consola de Diagnóstico de Errores"));
+        consolaErrores.addTab("Errores Léxicos", new JScrollPane(tablaErroresLexicos));
+        consolaErrores.addTab("Errores Sintácticos (JCUP)", new JScrollPane(tablaErroresSintacticos));
+        consolaErrores.setPreferredSize(new java.awt.Dimension(100, 175));
+        consolaErrores.setBorder(BorderFactory.createTitledBorder("Consola de Diagnóstico de Errores (Doble clic en fila para ubicar en código)"));
 
         add(barra, BorderLayout.NORTH);
         add(centro, BorderLayout.CENTER);
@@ -160,6 +211,31 @@ public class VentanaPrincipal extends JFrame {
 
         // Cargar por defecto la primera prueba seleccionada
         cargarDificultadSeleccionada();
+    }
+
+    private void irALinea(int linea, int columna) {
+        try {
+            int totalLineas = fuente.getLineCount();
+            int targetLinea = Math.max(1, Math.min(linea, totalLineas)) - 1;
+            int startOffset = fuente.getLineStartOffset(targetLinea);
+            int endOffset = fuente.getLineEndOffset(targetLinea);
+
+            int targetCaret = Math.min(startOffset + Math.max(0, columna - 1), endOffset);
+            fuente.setCaretPosition(targetCaret);
+            fuente.setSelectionStart(startOffset);
+            fuente.setSelectionEnd(endOffset);
+            fuente.requestFocusInWindow();
+        } catch (Exception ignored) {}
+    }
+
+    private void expandirArbol(boolean expandir) {
+        for (int i = 0; i < arbolSintactico.getRowCount(); i++) {
+            if (expandir) {
+                arbolSintactico.expandRow(i);
+            } else {
+                arbolSintactico.collapseRow(i);
+            }
+        }
     }
 
     private void cargarDificultadSeleccionada() {
@@ -172,7 +248,6 @@ public class VentanaPrincipal extends JFrame {
 
     private void cargarDesdeRecursoOArchivo(String nombreArchivo) {
         try {
-            // Intentar primero desde el classpath (/pruebas/...)
             InputStream is = getClass().getResourceAsStream("/pruebas/" + nombreArchivo);
             if (is == null) {
                 is = getClass().getClassLoader().getResourceAsStream("pruebas/" + nombreArchivo);
@@ -193,7 +268,6 @@ public class VentanaPrincipal extends JFrame {
                 }
             }
 
-            // Fallback: leer directamente del sistema de archivos local
             Path path = Path.of("src/main/resources/pruebas/" + nombreArchivo);
             if (!Files.exists(path)) {
                 path = Path.of("target/classes/pruebas/" + nombreArchivo);
@@ -229,16 +303,17 @@ public class VentanaPrincipal extends JFrame {
         errores.setRowCount(0);
         erroresSintacticos.setRowCount(0);
 
-        TablaSimbolos tabla = new TablaSimbolos();
         try {
-            // 1. Fase de Análisis Léxico
-            AnalizadorLexicoJS lexer = new AnalizadorLexicoJS(new StringReader(fuente.getText()), tabla);
-            TokenStream flujo = new TokenStream(lexer);
+            // Ejecución desacoplada mediante el coordinador del pipeline CompiladorJS
+            CompiladorJS.ResultadoCompilacion resultado = CompiladorJS.compilar(fuente.getText());
 
-            ultimosTokens = flujo.getTodosLosTokens();
-            ultimaTabla = tabla;
-            ultimosErrores = lexer.getErrores();
+            ultimosTokens = resultado.tokens();
+            ultimaTabla = resultado.tablaSimbolos();
+            ultimosErrores = resultado.erroresLexicos();
+            ultimosErroresSintacticos = resultado.erroresSintacticos();
+            ultimoAst = resultado.astRaiz();
 
+            // 1. Poblar tabla de tokens
             int i = 0;
             for (Token token : ultimosTokens) {
                 tokens.addRow(new Object[]{
@@ -251,7 +326,8 @@ public class VentanaPrincipal extends JFrame {
                 });
             }
 
-            tabla.obtenerTodos().forEach(s -> simbolos.addRow(new Object[]{
+            // 2. Poblar tabla de símbolos
+            ultimaTabla.obtenerTodos().forEach(s -> simbolos.addRow(new Object[]{
                 s.nombre(),
                 s.categoria(),
                 s.primeraLinea(),
@@ -259,6 +335,7 @@ public class VentanaPrincipal extends JFrame {
                 s.ocurrencias()
             }));
 
+            // 3. Poblar errores léxicos
             for (ErrorLexico e : ultimosErrores) {
                 errores.addRow(new Object[]{
                     e.lexemaInvalido(),
@@ -268,46 +345,31 @@ public class VentanaPrincipal extends JFrame {
                 });
             }
 
-            // 2. Fase de Análisis Sintáctico con JCUP
-            try {
-                AnalizadorLexicoJS lexerCup = new AnalizadorLexicoJS(new StringReader(fuente.getText()), new TablaSimbolos());
-                AnalizadorSintacticoJS parser = new AnalizadorSintacticoJS(lexerCup);
-                parser.parse();
-
-                NodoAST ast = parser.getAstRaiz();
-                if (ast != null) {
-                    arbolSintactico.setModel(new DefaultTreeModel(ast.toTreeNode()));
-                    for (int r = 0; r < arbolSintactico.getRowCount(); r++) {
-                        arbolSintactico.expandRow(r);
-                    }
-                } else {
-                    arbolSintactico.setModel(new DefaultTreeModel(new DefaultMutableTreeNode("Árbol vacío o con errores sintácticos")));
-                }
-
-                ultimosErroresSintacticos = parser.getErroresSintacticos();
-                for (ErrorSintactico es : ultimosErroresSintacticos) {
-                    erroresSintacticos.addRow(new Object[]{
-                        es.tokenEncontrado(),
-                        es.linea(),
-                        es.columna(),
-                        es.descripcion()
-                    });
-                }
-            } catch (Exception ex) {
+            // 4. Poblar errores sintácticos
+            for (ErrorSintactico es : ultimosErroresSintacticos) {
                 erroresSintacticos.addRow(new Object[]{
-                    "Error de Ejecución",
-                    1,
-                    1,
-                    "Excepción al parsear: " + ex.getMessage()
+                    es.tokenEncontrado(),
+                    es.linea(),
+                    es.columna(),
+                    es.descripcion()
                 });
             }
 
-            // Actualizar vista del informe ejecutivo en HTML
+            // 5. Actualizar Árbol Sintáctico (AST)
+            if (ultimoAst != null) {
+                arbolSintactico.setModel(new DefaultTreeModel(ultimoAst.toTreeNode()));
+                expandirArbol(true);
+            } else {
+                arbolSintactico.setModel(new DefaultTreeModel(new DefaultMutableTreeNode("Árbol vacío o con errores sintácticos")));
+            }
+
+            // 6. Actualizar vista del informe ejecutivo en HTML
             vistaReporte.setText(GeneradorReporte.generarHTMLParaSwing(
-                    nombreArchivoActual, fuente.getText(), ultimosTokens, ultimaTabla, ultimosErrores));
+                    nombreArchivoActual, fuente.getText(), ultimosTokens, ultimaTabla,
+                    ultimosErrores, ultimosErroresSintacticos, ultimoAst));
             vistaReporte.setCaretPosition(0);
 
-        } catch (java.io.IOException ex) {
+        } catch (Exception ex) {
             mostrarError(ex);
         }
     }
@@ -351,8 +413,10 @@ public class VentanaPrincipal extends JFrame {
 
             try {
                 String contenido = esHtml
-                        ? GeneradorReporte.generarHTML(nombreArchivoActual, fuente.getText(), ultimosTokens, ultimaTabla, ultimosErrores)
-                        : GeneradorReporte.generarMarkdown(nombreArchivoActual, fuente.getText(), ultimosTokens, ultimaTabla, ultimosErrores);
+                        ? GeneradorReporte.generarHTML(nombreArchivoActual, fuente.getText(), ultimosTokens,
+                                ultimaTabla, ultimosErrores, ultimosErroresSintacticos, ultimoAst)
+                        : GeneradorReporte.generarMarkdown(nombreArchivoActual, fuente.getText(), ultimosTokens,
+                                ultimaTabla, ultimosErrores, ultimosErroresSintacticos, ultimoAst);
 
                 GeneradorReporte.guardarEnArchivo(destino, contenido);
 
