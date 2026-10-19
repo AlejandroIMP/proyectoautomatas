@@ -1,0 +1,230 @@
+package com.analizador.sintactico;
+
+import java_cup.runtime.*;
+import com.analizador.modelo.ErrorSintactico;
+import java.util.ArrayList;
+import java.util.List;
+
+parser code {:
+    private final List<ErrorSintactico> erroresSintacticos = new ArrayList<>();
+    private NodoAST astRaiz = null;
+
+    @Override
+    public void syntax_error(Symbol cur_token) {
+        String tokenName = cur_token.value != null ? cur_token.value.toString() : ("Token ID: " + cur_token.sym);
+        int linea = cur_token.left > 0 ? cur_token.left : 1;
+        int columna = cur_token.right > 0 ? cur_token.right : 1;
+        erroresSintacticos.add(new ErrorSintactico(tokenName, linea, columna,
+                "Error sintáctico: Token no esperado '" + tokenName + "'"));
+    }
+
+    @Override
+    public void unrecovered_syntax_error(Symbol cur_token) throws Exception {
+        String tokenName = cur_token.value != null ? cur_token.value.toString() : ("Token ID: " + cur_token.sym);
+        int linea = cur_token.left > 0 ? cur_token.left : 1;
+        int columna = cur_token.right > 0 ? cur_token.right : 1;
+        erroresSintacticos.add(new ErrorSintactico(tokenName, linea, columna,
+                "Error sintáctico irrecuperable: Detención del análisis cerca de '" + tokenName + "'"));
+    }
+
+    public List<ErrorSintactico> getErroresSintacticos() {
+        return List.copyOf(erroresSintacticos);
+    }
+
+    public NodoAST getAstRaiz() {
+        return astRaiz;
+    }
+:};
+
+/* Terminales */
+terminal LET, CONST, VAR, FUNCTION, IF, ELSE, WHILE, FOR, RETURN, TRUE, FALSE, NULL;
+terminal PRINT, CONSOLE, LOG;
+terminal MAS, MENOS, MULT, DIV, MOD, ASIGNACION, INCREMENTO, DECREMENTO;
+terminal IGUAL_IGUAL, IGUAL_ESTRICTO, DIFERENTE, DIFERENTE_ESTRICTO;
+terminal MENOR, MAYOR, MENOR_IGUAL, MAYOR_IGUAL, AND, OR, NOT;
+terminal PAREN_IZQ, PAREN_DER, LLAVE_IZQ, LLAVE_DER, CORCHETE_IZQ, CORCHETE_DER;
+terminal PUNTO_COMA, COMA, DOS_PUNTOS, PUNTO;
+terminal UMINUS;
+
+terminal String ID;
+terminal Long LIT_ENTERO;
+terminal Double LIT_FLOTANTE;
+terminal String LIT_CADENA;
+terminal String LIT_TEMPLATE;
+
+/* No terminales */
+non terminal NodoAST programa;
+non terminal List<NodoAST> lista_sentencias;
+non terminal NodoAST sentencia;
+non terminal NodoAST declaracion_variable;
+non terminal NodoAST asignacion;
+non terminal NodoAST sentencia_if;
+non terminal NodoAST sentencia_imprimir;
+non terminal NodoAST bloque;
+non terminal List<NodoAST> lista_argumentos;
+non terminal NodoAST expresion;
+
+/* Precedencia y asociatividad */
+precedence nonassoc ELSE;
+precedence right ASIGNACION;
+precedence left OR;
+precedence left AND;
+precedence left IGUAL_IGUAL, DIFERENTE, IGUAL_ESTRICTO, DIFERENTE_ESTRICTO;
+precedence left MENOR, MAYOR, MENOR_IGUAL, MAYOR_IGUAL;
+precedence left MAS, MENOS;
+precedence left MULT, DIV, MOD;
+precedence right NOT, UMINUS, INCREMENTO, DECREMENTO;
+
+start with programa;
+
+programa ::= lista_sentencias:ls
+             {:
+                 NodoAST.Programa prog = new NodoAST.Programa(ls);
+                 parser.astRaiz = prog;
+                 RESULT = prog;
+             :}
+           | /* vacio */
+             {:
+                 NodoAST.Programa prog = new NodoAST.Programa(new ArrayList<>());
+                 parser.astRaiz = prog;
+                 RESULT = prog;
+             :}
+           ;
+
+lista_sentencias ::= lista_sentencias:ls sentencia:s
+                     {:
+                         if (s != null) ls.add(s);
+                         RESULT = ls;
+                     :}
+                   | sentencia:s
+                     {:
+                         List<NodoAST> ls = new ArrayList<>();
+                         if (s != null) ls.add(s);
+                         RESULT = ls;
+                     :}
+                   ;
+
+sentencia ::= declaracion_variable:d   {: RESULT = d; :}
+            | asignacion:a             {: RESULT = a; :}
+            | sentencia_if:i           {: RESULT = i; :}
+            | sentencia_imprimir:p     {: RESULT = p; :}
+            | bloque:b                 {: RESULT = b; :}
+            | expresion:e PUNTO_COMA   {: RESULT = new NodoAST.SentenciaExpresion(e); :}
+            | PUNTO_COMA               {: RESULT = null; :}
+            | error PUNTO_COMA         {: RESULT = null; :}
+            ;
+
+/* Módulo 1 (Helen): Declaraciones de Variables */
+declaracion_variable ::= LET ID:id PUNTO_COMA
+                         {: RESULT = new NodoAST.DeclaracionVariable("let", id, null); :}
+                       | LET ID:id ASIGNACION expresion:e PUNTO_COMA
+                         {: RESULT = new NodoAST.DeclaracionVariable("let", id, e); :}
+                       | CONST ID:id ASIGNACION expresion:e PUNTO_COMA
+                         {: RESULT = new NodoAST.DeclaracionVariable("const", id, e); :}
+                       | VAR ID:id PUNTO_COMA
+                         {: RESULT = new NodoAST.DeclaracionVariable("var", id, null); :}
+                       | VAR ID:id ASIGNACION expresion:e PUNTO_COMA
+                         {: RESULT = new NodoAST.DeclaracionVariable("var", id, e); :}
+                       ;
+
+asignacion ::= ID:id ASIGNACION expresion:e PUNTO_COMA
+               {: RESULT = new NodoAST.Asignacion(id, e); :}
+             ;
+
+/* Módulo 2 (Pablo): Estructura Condicional IF / ELSE */
+sentencia_if ::= IF PAREN_IZQ expresion:cond PAREN_DER sentencia:bt
+                 {: RESULT = new NodoAST.SentenciaIf(cond, bt, null); :}
+               | IF PAREN_IZQ expresion:cond PAREN_DER sentencia:bt ELSE sentencia:be
+                 {: RESULT = new NodoAST.SentenciaIf(cond, bt, be); :}
+               ;
+
+bloque ::= LLAVE_IZQ lista_sentencias:ls LLAVE_DER
+           {: RESULT = new NodoAST.Bloque(ls); :}
+         | LLAVE_IZQ LLAVE_DER
+           {: RESULT = new NodoAST.Bloque(new ArrayList<>()); :}
+         ;
+
+/* Módulo 3 (Mario): Instrucciones de Impresión a Pantalla */
+sentencia_imprimir ::= CONSOLE PUNTO LOG PAREN_IZQ lista_argumentos:args PAREN_DER PUNTO_COMA
+                       {: RESULT = new NodoAST.SentenciaImprimir("console.log", args); :}
+                     | CONSOLE PUNTO LOG PAREN_IZQ PAREN_DER PUNTO_COMA
+                       {: RESULT = new NodoAST.SentenciaImprimir("console.log", new ArrayList<>()); :}
+                     | PRINT PAREN_IZQ lista_argumentos:args PAREN_DER PUNTO_COMA
+                       {: RESULT = new NodoAST.SentenciaImprimir("print", args); :}
+                     | PRINT PAREN_IZQ PAREN_DER PUNTO_COMA
+                       {: RESULT = new NodoAST.SentenciaImprimir("print", new ArrayList<>()); :}
+                     ;
+
+lista_argumentos ::= lista_argumentos:ls COMA expresion:e
+                     {: ls.add(e); RESULT = ls; :}
+                   | expresion:e
+                     {:
+                         List<NodoAST> ls = new ArrayList<>();
+                         ls.add(e);
+                         RESULT = ls;
+                     :}
+                   ;
+
+/* Expresiones Aritméticas, Lógicas, Relacionales y Literales */
+expresion ::= expresion:e1 MAS expresion:e2
+              {: RESULT = new NodoAST.ExpresionBinaria(e1, "+", e2); :}
+            | expresion:e1 MENOS expresion:e2
+              {: RESULT = new NodoAST.ExpresionBinaria(e1, "-", e2); :}
+            | expresion:e1 MULT expresion:e2
+              {: RESULT = new NodoAST.ExpresionBinaria(e1, "*", e2); :}
+            | expresion:e1 DIV expresion:e2
+              {: RESULT = new NodoAST.ExpresionBinaria(e1, "/", e2); :}
+            | expresion:e1 MOD expresion:e2
+              {: RESULT = new NodoAST.ExpresionBinaria(e1, "%", e2); :}
+            | expresion:e1 AND expresion:e2
+              {: RESULT = new NodoAST.ExpresionBinaria(e1, "&&", e2); :}
+            | expresion:e1 OR expresion:e2
+              {: RESULT = new NodoAST.ExpresionBinaria(e1, "||", e2); :}
+            | expresion:e1 IGUAL_IGUAL expresion:e2
+              {: RESULT = new NodoAST.ExpresionBinaria(e1, "==", e2); :}
+            | expresion:e1 IGUAL_ESTRICTO expresion:e2
+              {: RESULT = new NodoAST.ExpresionBinaria(e1, "===", e2); :}
+            | expresion:e1 DIFERENTE expresion:e2
+              {: RESULT = new NodoAST.ExpresionBinaria(e1, "!=", e2); :}
+            | expresion:e1 DIFERENTE_ESTRICTO expresion:e2
+              {: RESULT = new NodoAST.ExpresionBinaria(e1, "!==", e2); :}
+            | expresion:e1 MENOR expresion:e2
+              {: RESULT = new NodoAST.ExpresionBinaria(e1, "<", e2); :}
+            | expresion:e1 MAYOR expresion:e2
+              {: RESULT = new NodoAST.ExpresionBinaria(e1, ">", e2); :}
+            | expresion:e1 MENOR_IGUAL expresion:e2
+              {: RESULT = new NodoAST.ExpresionBinaria(e1, "<=", e2); :}
+            | expresion:e1 MAYOR_IGUAL expresion:e2
+              {: RESULT = new NodoAST.ExpresionBinaria(e1, ">=", e2); :}
+            | NOT expresion:e
+              {: RESULT = new NodoAST.ExpresionUnaria("!", e); :}
+            | MENOS expresion:e
+              {: RESULT = new NodoAST.ExpresionUnaria("-", e); :}
+              %prec UMINUS
+            | INCREMENTO ID:id
+              {: RESULT = new NodoAST.ExpresionUnaria("++ (prefijo)", new NodoAST.Identificador(id)); :}
+            | DECREMENTO ID:id
+              {: RESULT = new NodoAST.ExpresionUnaria("-- (prefijo)", new NodoAST.Identificador(id)); :}
+            | ID:id INCREMENTO
+              {: RESULT = new NodoAST.ExpresionUnaria("++ (postfijo)", new NodoAST.Identificador(id)); :}
+            | ID:id DECREMENTO
+              {: RESULT = new NodoAST.ExpresionUnaria("-- (postfijo)", new NodoAST.Identificador(id)); :}
+            | PAREN_IZQ expresion:e PAREN_DER
+              {: RESULT = e; :}
+            | ID:id
+              {: RESULT = new NodoAST.Identificador(id); :}
+            | LIT_ENTERO:n
+              {: RESULT = new NodoAST.Literal(n, "Entero"); :}
+            | LIT_FLOTANTE:f
+              {: RESULT = new NodoAST.Literal(f, "Flotante"); :}
+            | LIT_CADENA:s
+              {: RESULT = new NodoAST.Literal(s, "Cadena"); :}
+            | LIT_TEMPLATE:t
+              {: RESULT = new NodoAST.Literal(t, "Plantilla"); :}
+            | TRUE
+              {: RESULT = new NodoAST.Literal(Boolean.TRUE, "Booleano"); :}
+            | FALSE
+              {: RESULT = new NodoAST.Literal(Boolean.FALSE, "Booleano"); :}
+            | NULL
+              {: RESULT = new NodoAST.Literal(null, "Null"); :}
+            ;

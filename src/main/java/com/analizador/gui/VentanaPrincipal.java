@@ -2,10 +2,14 @@ package com.analizador.gui;
 
 import com.analizador.lexico.AnalizadorLexicoJS;
 import com.analizador.modelo.ErrorLexico;
+import com.analizador.modelo.ErrorSintactico;
 import com.analizador.modelo.TablaSimbolos;
 import com.analizador.modelo.Token;
 import com.analizador.reporte.GeneradorReporte;
+import com.analizador.sintactico.AnalizadorSintacticoJS;
+import com.analizador.sintactico.NodoAST;
 import com.analizador.sintactico.TokenStream;
+
 import java.awt.BorderLayout;
 import java.awt.Desktop;
 import java.awt.Font;
@@ -35,6 +39,7 @@ import javax.swing.JTree;
 import javax.swing.filechooser.FileNameExtensionFilter;
 import javax.swing.table.DefaultTableModel;
 import javax.swing.tree.DefaultMutableTreeNode;
+import javax.swing.tree.DefaultTreeModel;
 
 public class VentanaPrincipal extends JFrame {
 
@@ -43,6 +48,7 @@ public class VentanaPrincipal extends JFrame {
         "Dificultad Media",
         "Dificultad Alta",
         "Dificultad Muy Compleja",
+        "Prueba Sintáctica Completa (Grupo)",
         "Prueba Errores Léxicos"
     };
 
@@ -51,6 +57,7 @@ public class VentanaPrincipal extends JFrame {
         "algoritmo_medio.js",
         "algoritmo_alto.js",
         "algoritmo_muy_complejo.js",
+        "algoritmo_sintactico_completo.js",
         "algoritmo_errores.js"
     };
 
@@ -58,9 +65,11 @@ public class VentanaPrincipal extends JFrame {
     private List<Token> ultimosTokens = new ArrayList<>();
     private TablaSimbolos ultimaTabla = new TablaSimbolos();
     private List<ErrorLexico> ultimosErrores = new ArrayList<>();
+    private List<ErrorSintactico> ultimosErroresSintacticos = new ArrayList<>();
 
     private final JTextArea fuente = new JTextArea();
     private final JEditorPane vistaReporte = new JEditorPane("text/html", "");
+    private final JTree arbolSintactico = new JTree(new DefaultMutableTreeNode("AST (sin analizar)"));
 
     private final DefaultTableModel tokens = new DefaultTableModel(
             new Object[]{"#", "Token", "Lexema", "Línea", "Columna", "Valor Literal"}, 0) {
@@ -86,12 +95,20 @@ public class VentanaPrincipal extends JFrame {
         }
     };
 
+    private final DefaultTableModel erroresSintacticos = new DefaultTableModel(
+            new Object[]{"Token No Esperado", "Línea", "Columna", "Descripción"}, 0) {
+        @Override
+        public boolean isCellEditable(int row, int column) {
+            return false;
+        }
+    };
+
     private final JComboBox<String> dificultad = new JComboBox<>(DIFICULTADES);
 
     public VentanaPrincipal() {
-        super("Analizador Léxico JavaScript - Java 21 & JFlex");
+        super("Analizador Léxico y Sintáctico JS - Java 21, JFlex & JCUP");
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-        setSize(1200, 750);
+        setSize(1250, 780);
         setLocationRelativeTo(null);
 
         fuente.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 14));
@@ -102,7 +119,7 @@ public class VentanaPrincipal extends JFrame {
         JButton cargar = new JButton("Cargar .js");
         cargar.addActionListener(e -> cargarArchivo());
 
-        JButton ejecutar = new JButton("Ejecutar Análisis Léxico");
+        JButton ejecutar = new JButton("Ejecutar Análisis Completo");
         ejecutar.addActionListener(e -> analizar());
 
         JButton exportar = new JButton("Exportar Reporte");
@@ -125,19 +142,21 @@ public class VentanaPrincipal extends JFrame {
         resultados.addTab("Flujo de Tokens", new JScrollPane(new JTable(tokens)));
         resultados.addTab("Tabla de Símbolos", new JScrollPane(new JTable(simbolos)));
         resultados.addTab("Informe Ejecutivo", new JScrollPane(vistaReporte));
-        resultados.addTab("Árbol Sintáctico", new JScrollPane(new JTree(new DefaultMutableTreeNode("AST (fase sintáctica)"))));
+        resultados.addTab("Árbol Sintáctico (AST)", new JScrollPane(arbolSintactico));
 
         JSplitPane centro = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT,
                 new JScrollPane(fuente), resultados);
         centro.setResizeWeight(0.42);
 
-        JScrollPane scrollErrores = new JScrollPane(new JTable(errores));
-        scrollErrores.setBorder(BorderFactory.createTitledBorder("Consola de Errores Léxicos"));
-        scrollErrores.setPreferredSize(new java.awt.Dimension(100, 160));
+        JTabbedPane consolaErrores = new JTabbedPane();
+        consolaErrores.addTab("Errores Léxicos", new JScrollPane(new JTable(errores)));
+        consolaErrores.addTab("Errores Sintácticos (JCUP)", new JScrollPane(new JTable(erroresSintacticos)));
+        consolaErrores.setPreferredSize(new java.awt.Dimension(100, 170));
+        consolaErrores.setBorder(BorderFactory.createTitledBorder("Consola de Diagnóstico de Errores"));
 
         add(barra, BorderLayout.NORTH);
         add(centro, BorderLayout.CENTER);
-        add(scrollErrores, BorderLayout.SOUTH);
+        add(consolaErrores, BorderLayout.SOUTH);
 
         // Cargar por defecto la primera prueba seleccionada
         cargarDificultadSeleccionada();
@@ -208,9 +227,11 @@ public class VentanaPrincipal extends JFrame {
         tokens.setRowCount(0);
         simbolos.setRowCount(0);
         errores.setRowCount(0);
+        erroresSintacticos.setRowCount(0);
 
         TablaSimbolos tabla = new TablaSimbolos();
         try {
+            // 1. Fase de Análisis Léxico
             AnalizadorLexicoJS lexer = new AnalizadorLexicoJS(new StringReader(fuente.getText()), tabla);
             TokenStream flujo = new TokenStream(lexer);
 
@@ -247,7 +268,41 @@ public class VentanaPrincipal extends JFrame {
                 });
             }
 
-            // Actualizar vista del informe ejecutivo en HTML dentro de la pestaña correspondiente
+            // 2. Fase de Análisis Sintáctico con JCUP
+            try {
+                AnalizadorLexicoJS lexerCup = new AnalizadorLexicoJS(new StringReader(fuente.getText()), new TablaSimbolos());
+                AnalizadorSintacticoJS parser = new AnalizadorSintacticoJS(lexerCup);
+                parser.parse();
+
+                NodoAST ast = parser.getAstRaiz();
+                if (ast != null) {
+                    arbolSintactico.setModel(new DefaultTreeModel(ast.toTreeNode()));
+                    for (int r = 0; r < arbolSintactico.getRowCount(); r++) {
+                        arbolSintactico.expandRow(r);
+                    }
+                } else {
+                    arbolSintactico.setModel(new DefaultTreeModel(new DefaultMutableTreeNode("Árbol vacío o con errores sintácticos")));
+                }
+
+                ultimosErroresSintacticos = parser.getErroresSintacticos();
+                for (ErrorSintactico es : ultimosErroresSintacticos) {
+                    erroresSintacticos.addRow(new Object[]{
+                        es.tokenEncontrado(),
+                        es.linea(),
+                        es.columna(),
+                        es.descripcion()
+                    });
+                }
+            } catch (Exception ex) {
+                erroresSintacticos.addRow(new Object[]{
+                    "Error de Ejecución",
+                    1,
+                    1,
+                    "Excepción al parsear: " + ex.getMessage()
+                });
+            }
+
+            // Actualizar vista del informe ejecutivo en HTML
             vistaReporte.setText(GeneradorReporte.generarHTMLParaSwing(
                     nombreArchivoActual, fuente.getText(), ultimosTokens, ultimaTabla, ultimosErrores));
             vistaReporte.setCaretPosition(0);
@@ -260,7 +315,7 @@ public class VentanaPrincipal extends JFrame {
     private void exportarReporte() {
         if (ultimosTokens.isEmpty()) {
             JOptionPane.showMessageDialog(this,
-                    "Primero debe ejecutar el análisis léxico para generar el reporte.",
+                    "Primero debe ejecutar el análisis para generar el reporte.",
                     "Aviso", JOptionPane.INFORMATION_MESSAGE);
             return;
         }
@@ -268,7 +323,7 @@ public class VentanaPrincipal extends JFrame {
         String[] opciones = {"Reporte HTML (Completo con Estilos)", "Reporte Markdown (.md)", "Cancelar"};
         int seleccion = JOptionPane.showOptionDialog(this,
                 "Seleccione el formato en el que desea exportar el reporte contextualizado:",
-                "Exportar Reporte de Análisis Léxico",
+                "Exportar Reporte de Análisis Léxico y Sintáctico",
                 JOptionPane.DEFAULT_OPTION, JOptionPane.QUESTION_MESSAGE, null, opciones, opciones[0]);
 
         if (seleccion == 0) {

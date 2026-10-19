@@ -249,4 +249,23 @@ public class AnalizadorLexicoTest {
         assertEquals(2, tabla.obtenerMapa().size());
         assertDoesNotThrow(tabla::mostrar);
     }
+
+    @Test
+    @DisplayName("Identificador invalido que inicia con digito y numeros con exponente")
+    void testIdentificadorInvalidoIniciaConDigito() throws Exception {
+        String codigo = "let x = 1maria;\nlet y = 1e5;\nlet z = maria1;";
+        TablaSimbolos tabla = new TablaSimbolos();
+        AnalizadorLexicoJS lexer = new AnalizadorLexicoJS(new StringReader(codigo), tabla);
+        TokenStream stream = new TokenStream(lexer);
+        List<Token> tokens = stream.getTodosLosTokens();
+
+        List<ErrorLexico> errores = lexer.getErrores();
+        assertEquals(1, errores.size(), "Debe existir exactamente 1 error lexico");
+        assertEquals("1maria", errores.get(0).lexemaInvalido());
+        assertEquals("Identificador inválido: no puede iniciar con un dígito", errores.get(0).descripcion());
+
+        // Verificar que 1e5 se reconocio como flotante y maria1 como identificador
+        assertTrue(tokens.stream().anyMatch(t -> t.tipo() == TokenType.LIT_FLOTANTE && "1e5".equals(t.lexema())));
+        assertTrue(tokens.stream().anyMatch(t -> t.tipo() == TokenType.ID && "maria1".equals(t.lexema())));
+    }
 }

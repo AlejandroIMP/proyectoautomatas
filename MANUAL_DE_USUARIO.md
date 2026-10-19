@@ -133,6 +133,13 @@ Si el código contiene caracteres ajenos al alfabeto del lenguaje (como `@`, `#`
    * El estado del análisis cambiará automáticamente a <font color="red">**CON ERRORES LÉXICOS**</font> y detallará el impacto de dichos símbolos.
 4. Al exportar el reporte en HTML, se incluirá una sección especial de **Incidentes Léxicos Detectados** con advertencias técnicas para el usuario.
 
+Para una prueba más completa, también puede abrir manualmente el archivo
+`src/main/resources/pruebas/algoritmo_errores_extenso.js` usando **Cargar .js**.
+Este archivo combina símbolos inválidos, identificadores que comienzan con dígitos,
+caracteres Unicode no contemplados, operadores incompletos y un comentario de bloque
+sin cerrar como último escenario. Los tokens válidos que aparecen antes del comentario
+sin cerrar permiten comprobar la recuperación del analizador.
+
 ---
 
 ## 6. Preguntas Frecuentes y Solución de Problemas

@@ -18,6 +18,11 @@
 
     <dependencies>
         <dependency>
+            <groupId>com.github.vbmacher</groupId>
+            <artifactId>java-cup-runtime</artifactId>
+            <version>11b-20160615</version>
+        </dependency>
+        <dependency>
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter</artifactId>
             <version>${junit.version}</version>
@@ -27,6 +32,27 @@
 
     <build>
         <plugins>
+            <!-- Plugin para compilar automáticamente el archivo .cup a código Java -->
+            <plugin>
+                <groupId>com.github.vbmacher</groupId>
+                <artifactId>cup-maven-plugin</artifactId>
+                <version>11b-20160615</version>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>generate</goal>
+                        </goals>
+                    </execution>
+                </executions>
+                <configuration>
+                    <cupDefinition>src/main/cup/parser.cup</cupDefinition>
+                    <outputDirectory>${project.build.directory}/generated-sources/cup</outputDirectory>
+                    <className>AnalizadorSintacticoJS</className>
+                    <symbolsName>sym</symbolsName>
+                    <packageName>com.analizador.sintactico</packageName>
+                </configuration>
+            </plugin>
+
             <!-- Plugin para compilar automáticamente el archivo .flex a código Java -->
             <plugin>
                 <groupId>de.jflex</groupId>
@@ -54,6 +80,7 @@
                         <configuration>
                             <sources>
                                 <source>${project.build.directory}/generated-sources/jflex</source>
+                                <source>${project.build.directory}/generated-sources/cup</source>
                             </sources>
                         </configuration>
                     </execution>
