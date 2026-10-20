@@ -15,7 +15,7 @@ El proyecto ha sido transformado exitosamente de un analizador únicamente léxi
 3. **Instrucciones de Impresión a Pantalla:** Soporte dual para `console.log(...)` (estándar JavaScript) y `print(...)` (sintaxis de pseudocódigo o función built-in), con listas dinámicas de argumentos.
 4. **Expresiones Aritméticas, Lógicas y Relacionales:** Precedencia y asociatividad matemáticamente configuradas en CUP para eliminar ambigüedades clásicas y conflictos *shift/reduce*.
 5. **Recuperación y Reporte de Errores Sintácticos:** Detección de tokens no esperados con línea y columna exacta sin abortar abruptamente el análisis.
-6. **Visualización en Árbol (AST en Swing):** Pestaña interactiva con `JTree` que muestra la jerarquía sintáctica generada.
+6. **Visualización en Árbol (AST en Swing y Mermaid):** Pestaña interactiva con `JTree` que muestra la jerarquía sintáctica generada y exportación en formato diagrama de flujo Mermaid.
 
 ---
 
@@ -25,86 +25,33 @@ Para garantizar un trabajo equitativo y sin choques de código en Git, el proyec
 
 | Integrante | Rol / Módulo Asignado | Componentes y Archivos Clave |
 | :--- | :--- | :--- |
-| **Alejandro** *(Tú)* | **Arquitectura, Integración CUP/JFlex y GUI** | - Configuración Maven (`pom.xml`, plugins `cup-maven-plugin` y `jflex`).<br>- Directiva `%cup` y generación de símbolos en `Lexer.flex`.<br>- Coordinación de la gramática base en `parser.cup`.<br>- Integración visual en `VentanaPrincipal.java` (`JTree` del AST y consola de errores sintácticos). |
+| **Alejandro** *(Tú)* | **Arquitectura, Pipeline, GUI & Diagnóstico Avanzado** | - Configuración Maven (`pom.xml`, plugins `cup-maven-plugin` y `jflex`).<br>- Coordinador del pipeline [`CompiladorJS.java`](file:///C:/Users/aleja/IdeaProjects/Programacion%20III/AnalizadorLexico/src/main/java/com/analizador/servicio/CompiladorJS.java).<br>- Puente léxico-sintáctico en [`Lexer.flex`](file:///C:/Users/aleja/IdeaProjects/Programacion%20III/AnalizadorLexico/src/main/jflex/com/analizador/lexico/Lexer.flex).<br>- Editor con números de línea ([`NumeroLinea.java`](file:///C:/Users/aleja/IdeaProjects/Programacion%20III/AnalizadorLexico/src/main/java/com/analizador/gui/NumeroLinea.java)), barra de estado y resaltado interactivo de errores.<br>- Generador de reportes con métricas sintácticas y diagramas Mermaid ([`GeneradorReporte.java`](file:///C:/Users/aleja/IdeaProjects/Programacion%20III/AnalizadorLexico/src/main/java/com/analizador/reporte/GeneradorReporte.java)).<br>- Métodos de exportación de AST a Mermaid y Visitor en [`NodoAST.java`](file:///C:/Users/aleja/IdeaProjects/Programacion%20III/AnalizadorLexico/src/main/java/com/analizador/sintactico/NodoAST.java). |
 | **Helen** | **Módulo 1: Declaración de Variables y Tipos** | - Reglas en `parser.cup` para `LET`, `CONST`, `VAR` con y sin inicialización.<br>- Reglas de reasignación (`ID ASIGNACION expresion`).<br>- Modelo AST: `NodoAST.DeclaracionVariable` y `NodoAST.Asignacion`.<br>- Validación de pruebas unitarias en `AnalizadorSintacticoTest.testDeclaracionVariables`. |
 | **Pablo** | **Módulo 2: Control de Flujo (IF / ELSE y Condiciones)** | - Reglas en `parser.cup` para `sentencia_if` (IF simple, IF-ELSE y anidamiento).<br>- Manejo de bloques `{ ... }` con `NodoAST.Bloque`.<br>- Resolución de la ambigüedad *dangling else* con `precedence nonassoc ELSE`.<br>- Pruebas unitarias en `AnalizadorSintacticoTest.testInstruccionIf`. |
 | **Mario** | **Módulo 3: Impresión a Pantalla y Expresiones** | - Reglas en `parser.cup` para `console.log(...)` y `print(...)` con listas dinámicas de argumentos (`lista_argumentos`).<br>- Nodos AST: `NodoAST.SentenciaImprimir`, `ExpresionBinaria`, `ExpresionUnaria`, `Literal`, `Identificador`.<br>- Archivo de prueba integral `algoritmo_sintactico_completo.js`.<br>- Pruebas en `AnalizadorSintacticoTest.testInstruccionImprimir`. |
 
 ---
 
-## 3. Estructura de la Gramática CUP (`src/main/cup/parser.cup`)
+## 3. Mejoras Implementadas para el Módulo de Alejandro
 
-La gramática está estructurada para que cada miembro identifique sus producciones con exactitud:
-
-```cup
-/* ========================================================
-   MÓDULO 1 (HELEN): DECLARACIÓN Y ASIGNACIÓN DE VARIABLES
-   ======================================================== */
-declaracion_variable ::= LET ID:id PUNTO_COMA
-                         {: RESULT = new NodoAST.DeclaracionVariable("let", id, null); :}
-                       | LET ID:id ASIGNACION expresion:e PUNTO_COMA
-                         {: RESULT = new NodoAST.DeclaracionVariable("let", id, e); :}
-                       | CONST ID:id ASIGNACION expresion:e PUNTO_COMA
-                         {: RESULT = new NodoAST.DeclaracionVariable("const", id, e); :}
-                       | VAR ID:id PUNTO_COMA
-                         {: RESULT = new NodoAST.DeclaracionVariable("var", id, null); :}
-                       | VAR ID:id ASIGNACION expresion:e PUNTO_COMA
-                         {: RESULT = new NodoAST.DeclaracionVariable("var", id, e); :}
-                       ;
-
-asignacion ::= ID:id ASIGNACION expresion:e PUNTO_COMA
-               {: RESULT = new NodoAST.Asignacion(id, e); :}
-             ;
-
-/* ========================================================
-   MÓDULO 2 (PABLO): ESTRUCTURA CONDICIONAL IF / ELSE
-   ======================================================== */
-sentencia_if ::= IF PAREN_IZQ expresion:cond PAREN_DER sentencia:bt
-                 {: RESULT = new NodoAST.SentenciaIf(cond, bt, null); :}
-               | IF PAREN_IZQ expresion:cond PAREN_DER sentencia:bt ELSE sentencia:be
-                 {: RESULT = new NodoAST.SentenciaIf(cond, bt, be); :}
-               ;
-
-bloque ::= LLAVE_IZQ lista_sentencias:ls LLAVE_DER
-           {: RESULT = new NodoAST.Bloque(ls); :}
-         | LLAVE_IZQ LLAVE_DER
-           {: RESULT = new NodoAST.Bloque(new ArrayList<>()); :}
-         ;
-
-/* ========================================================
-   MÓDULO 3 (MARIO): IMPRESIÓN A PANTALLA
-   ======================================================== */
-sentencia_imprimir ::= CONSOLE PUNTO LOG PAREN_IZQ lista_argumentos:args PAREN_DER PUNTO_COMA
-                       {: RESULT = new NodoAST.SentenciaImprimir("console.log", args); :}
-                     | CONSOLE PUNTO LOG PAREN_IZQ PAREN_DER PUNTO_COMA
-                       {: RESULT = new NodoAST.SentenciaImprimir("console.log", new ArrayList<>()); :}
-                     | PRINT PAREN_IZQ lista_argumentos:args PAREN_DER PUNTO_COMA
-                       {: RESULT = new NodoAST.SentenciaImprimir("print", args); :}
-                     | PRINT PAREN_IZQ PAREN_DER PUNTO_COMA
-                       {: RESULT = new NodoAST.SentenciaImprimir("print", new ArrayList<>()); :}
-                     ;
-
-lista_argumentos ::= lista_argumentos:ls COMA expresion:e
-                     {: ls.add(e); RESULT = ls; :}
-                   | expresion:e
-                     {:
-                         List<NodoAST> ls = new ArrayList<>();
-                         ls.add(e);
-                         RESULT = ls;
-                     :}
-                   ;
-```
+1. **Pipeline Centralizado (`CompiladorJS`):** Desacopla la lógica de compilación de la GUI. Retorna un registro completo con tokens, tabla de símbolos, errores léxicos, errores sintácticos, advertencias semánticas y tiempo de compilación en milisegundos.
+2. **Análisis Estático de Advertencias:** Detección de variables declaradas sin valor inicial y variables que solo aparecen una vez (posibles variables declaradas en desuso).
+3. **Editor de Código con Números de Línea (`NumeroLinea`):** Componente en el panel izquierdo del editor que numera automáticamente cada línea y se redimensiona dinámicamente según la cantidad de dígitos.
+4. **Navegación y Resaltado Visual de Errores:** Al hacer doble clic en un error (léxico o sintáctico), el cursor viaja a la posición exacta y resalta la línea con un suave color rojo translúcido.
+5. **Barra de Estado en Tiempo Real:** Muestra la línea y columna activa del cursor, total de caracteres, total de tokens, tiempo de compilación y estado general.
+6. **Exportación de Diagramas Mermaid:** El AST incluye el método `toMermaid()` que genera diagramas de flujo compatibles con Mermaid.js, incrustados en los reportes HTML y Markdown exportables.
+7. **Control del Árbol Sintáctico en la GUI:** Botones para **"Expandir Todo"** y **"Colapsar Todo"** en la pestaña del AST.
 
 ---
 
 ## 4. Guía de Ejecución y Pruebas
 
-### Compilar y Ejecutar Pruebas
+### Compilar y Ejecutar Pruebas Automatizadas
 ```powershell
 # Compilar todo el proyecto (genera fuentes de CUP y JFlex automáticamente)
 mvn compile
 
-# Ejecutar las 19 pruebas unitarias (léxicas y sintácticas)
+# Ejecutar las 24 pruebas unitarias (léxicas, sintácticas, pipeline y reportes)
 mvn test
 ```
 
@@ -112,4 +59,4 @@ mvn test
 ```powershell
 mvn exec:java -Dexec.mainClass="com.analizador.MainApp"
 ```
-O simplemente ejecutar la clase principal `com.analizador.MainApp` directamente desde **IntelliJ IDEA**.
+O ejecutar directamente la clase principal `com.analizador.MainApp` en **IntelliJ IDEA**.

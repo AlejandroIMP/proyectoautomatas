@@ -14,8 +14,9 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Servicio central del compilador/analizador (Módulo de Alejandro - Arquitectura).
- * Coordina la ejecución integrada del analizador léxico (JFlex) y del analizador sintáctico (JCUP).
+ * Servicio central del compilador/analizador (Módulo de Alejandro - Arquitectura y Pipeline).
+ * Coordina la ejecución integrada del analizador léxico (JFlex), analizador sintáctico (JCUP),
+ * métricas de rendimiento y análisis estático de advertencias.
  */
 public final class CompiladorJS {
 
@@ -30,7 +31,9 @@ public final class CompiladorJS {
             TablaSimbolos tablaSimbolos,
             List<ErrorLexico> erroresLexicos,
             List<ErrorSintactico> erroresSintacticos,
-            NodoAST astRaiz
+            List<String> advertencias,
+            NodoAST astRaiz,
+            long tiempoCompilacionMs
     ) {
         public boolean esExitoso() {
             return erroresLexicos.isEmpty() && erroresSintacticos.isEmpty() && astRaiz != null;
@@ -44,22 +47,27 @@ public final class CompiladorJS {
             return !erroresSintacticos.isEmpty();
         }
 
+        public boolean tieneAdvertencias() {
+            return !advertencias.isEmpty();
+        }
+
         public int totalErrores() {
             return erroresLexicos.size() + erroresSintacticos.size();
         }
     }
 
     /**
-     * Ejecuta el análisis léxico y sintáctico completo sobre el código fuente recibido.
+     * Ejecuta el pipeline completo de compilación sobre el código fuente.
      *
      * @param codigoFuente Código JavaScript o pseudocódigo a analizar.
-     * @return Objeto con los tokens, tabla de símbolos, errores y el AST generado.
+     * @return Objeto con los tokens, tabla de símbolos, errores, advertencias, AST y tiempo de ejecución.
      */
     public static ResultadoCompilacion compilar(String codigoFuente) {
+        long inicio = System.currentTimeMillis();
         String fuente = (codigoFuente == null) ? "" : codigoFuente;
         TablaSimbolos tablaSimbolos = new TablaSimbolos();
 
-        // 1. Fase de Análisis Léxico
+        // 1. Fase de Análisis Léxico (JFlex)
         List<Token> tokens = new ArrayList<>();
         List<ErrorLexico> erroresLexicos = new ArrayList<>();
         try {
@@ -87,13 +95,39 @@ public final class CompiladorJS {
                     "Fallo durante análisis sintáctico: " + ex.getMessage()));
         }
 
+        // 3. Fase de Análisis Estático de Advertencias (Alejandro)
+        List<String> advertencias = new ArrayList<>();
+        if (astRaiz != null) {
+            analizarAdvertencias(astRaiz, tablaSimbolos, advertencias);
+        }
+
+        long tiempoTotal = Math.max(1, System.currentTimeMillis() - inicio);
+
         return new ResultadoCompilacion(
                 fuente,
                 List.copyOf(tokens),
                 tablaSimbolos,
                 List.copyOf(erroresLexicos),
                 List.copyOf(erroresSintacticos),
-                astRaiz
+                List.copyOf(advertencias),
+                astRaiz,
+                tiempoTotal
         );
+    }
+
+    private static void analizarAdvertencias(NodoAST ast, TablaSimbolos tabla, List<String> advertencias) {
+        ast.recorrer(nodo -> {
+            if (nodo instanceof NodoAST.DeclaracionVariable decl) {
+                // Advertencia: variable declarada sin inicializar
+                if (decl.valorInicial() == null) {
+                    advertencias.add("Variable '" + decl.identificador() + "' declarada (" + decl.tipoDeclaracion() + ") sin valor inicial.");
+                }
+                // Advertencia: variable declarada pero nunca leída/modificada posteriormente
+                var entrada = tabla.buscar(decl.identificador());
+                if (entrada != null && entrada.ocurrencias() == 1) {
+                    advertencias.add("Variable '" + decl.identificador() + "' declarada pero solo referenciada 1 vez (posible variable no utilizada).");
+                }
+            }
+        });
     }
 }

@@ -9,6 +9,7 @@ import com.analizador.servicio.CompiladorJS;
 import com.analizador.sintactico.NodoAST;
 
 import java.awt.BorderLayout;
+import java.awt.Color;
 import java.awt.Desktop;
 import java.awt.FlowLayout;
 import java.awt.Font;
@@ -23,11 +24,13 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import javax.swing.BorderFactory;
+import javax.swing.Box;
 import javax.swing.JButton;
 import javax.swing.JComboBox;
 import javax.swing.JEditorPane;
 import javax.swing.JFileChooser;
 import javax.swing.JFrame;
+import javax.swing.JLabel;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
@@ -39,12 +42,14 @@ import javax.swing.JToolBar;
 import javax.swing.JTree;
 import javax.swing.filechooser.FileNameExtensionFilter;
 import javax.swing.table.DefaultTableModel;
+import javax.swing.text.DefaultHighlighter;
 import javax.swing.tree.DefaultMutableTreeNode;
 import javax.swing.tree.DefaultTreeModel;
 
 /**
  * Interfaz Gráfica de Usuario Integrada (Módulo de Alejandro - Arquitectura y GUI).
- * Conecta el pipeline de compilación (JFlex + JCUP), visualización de AST y navegación de errores.
+ * Conecta el pipeline de compilación (JFlex + JCUP), visualización de AST,
+ * números de línea, barra de estado, resaltado de errores y exportación Mermaid.
  */
 public class VentanaPrincipal extends JFrame {
 
@@ -71,11 +76,14 @@ public class VentanaPrincipal extends JFrame {
     private TablaSimbolos ultimaTabla = new TablaSimbolos();
     private List<ErrorLexico> ultimosErrores = new ArrayList<>();
     private List<ErrorSintactico> ultimosErroresSintacticos = new ArrayList<>();
+    private List<String> ultimasAdvertencias = new ArrayList<>();
     private NodoAST ultimoAst = null;
+    private long ultimoTiempoMs = 0;
 
     private final JTextArea fuente = new JTextArea();
     private final JEditorPane vistaReporte = new JEditorPane("text/html", "");
     private final JTree arbolSintactico = new JTree(new DefaultMutableTreeNode("AST (sin analizar)"));
+    private final JLabel barraEstado = new JLabel("Listo | Línea: 1, Columna: 1");
 
     private final DefaultTableModel tokens = new DefaultTableModel(
             new Object[]{"#", "Token", "Lexema", "Línea", "Columna", "Valor Literal"}, 0) {
@@ -109,21 +117,42 @@ public class VentanaPrincipal extends JFrame {
         }
     };
 
+    private final DefaultTableModel advertencias = new DefaultTableModel(
+            new Object[]{"#", "Aviso / Advertencia de Análisis Estático"}, 0) {
+        @Override
+        public boolean isCellEditable(int row, int column) {
+            return false;
+        }
+    };
+
     private final JComboBox<String> dificultad = new JComboBox<>(DIFICULTADES);
+    private final NumeroLinea numeroLinea;
 
     public VentanaPrincipal() {
         super("Analizador Léxico y Sintáctico JS - Java 21, JFlex & JCUP");
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-        setSize(1260, 780);
+        setSize(1280, 800);
         setLocationRelativeTo(null);
 
         fuente.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 14));
         fuente.setTabSize(4);
+        fuente.setBorder(BorderFactory.createEmptyBorder(4, 6, 4, 6));
+
+        numeroLinea = new NumeroLinea(fuente);
+
+        // Actualizar coordenadas en la barra de estado según el cursor
+        fuente.addCaretListener(e -> actualizarBarraEstado());
 
         vistaReporte.setEditable(false);
 
         JButton cargar = new JButton("Cargar .js");
         cargar.addActionListener(e -> cargarArchivo());
+
+        JButton limpiar = new JButton("Limpiar");
+        limpiar.addActionListener(e -> {
+            fuente.setText("");
+            analizar();
+        });
 
         JButton ejecutar = new JButton("▶ Ejecutar Análisis Completo");
         ejecutar.setFont(ejecutar.getFont().deriveFont(Font.BOLD));
@@ -138,6 +167,7 @@ public class VentanaPrincipal extends JFrame {
         JToolBar barra = new JToolBar();
         barra.setFloatable(false);
         barra.add(cargar);
+        barra.add(limpiar);
         barra.addSeparator();
         barra.add(dificultad);
         barra.addSeparator();
@@ -164,11 +194,15 @@ public class VentanaPrincipal extends JFrame {
         resultados.addTab("Informe Ejecutivo", new JScrollPane(vistaReporte));
         resultados.addTab("Árbol Sintáctico (AST)", panelAst);
 
+        // Editor con números de línea en el gutter izquierdo
+        JScrollPane scrollEditor = new JScrollPane(fuente);
+        scrollEditor.setRowHeaderView(numeroLinea);
+
         JSplitPane centro = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT,
-                new JScrollPane(fuente), resultados);
+                scrollEditor, resultados);
         centro.setResizeWeight(0.42);
 
-        // Tablas de Errores con navegación automática al editor al hacer clic
+        // Tablas de Errores con navegación automática y resaltado al hacer clic
         JTable tablaErroresLexicos = new JTable(errores);
         tablaErroresLexicos.addMouseListener(new MouseAdapter() {
             @Override
@@ -202,15 +236,44 @@ public class VentanaPrincipal extends JFrame {
         JTabbedPane consolaErrores = new JTabbedPane();
         consolaErrores.addTab("Errores Léxicos", new JScrollPane(tablaErroresLexicos));
         consolaErrores.addTab("Errores Sintácticos (JCUP)", new JScrollPane(tablaErroresSintacticos));
-        consolaErrores.setPreferredSize(new java.awt.Dimension(100, 175));
-        consolaErrores.setBorder(BorderFactory.createTitledBorder("Consola de Diagnóstico de Errores (Doble clic en fila para ubicar en código)"));
+        consolaErrores.addTab("Advertencias Semánticas", new JScrollPane(new JTable(advertencias)));
+        consolaErrores.setPreferredSize(new java.awt.Dimension(100, 185));
+        consolaErrores.setBorder(BorderFactory.createTitledBorder("Consola de Diagnóstico (Doble clic en error para ubicar en el código)"));
+
+        JPanel panelInferior = new JPanel(new BorderLayout());
+        barraEstado.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 12));
+        barraEstado.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createMatteBorder(1, 0, 0, 0, new Color(226, 232, 240)),
+                BorderFactory.createEmptyBorder(6, 12, 6, 12)));
+        barraEstado.setOpaque(true);
+        barraEstado.setBackground(new Color(248, 250, 252));
+        panelInferior.add(consolaErrores, BorderLayout.CENTER);
+        panelInferior.add(barraEstado, BorderLayout.SOUTH);
 
         add(barra, BorderLayout.NORTH);
         add(centro, BorderLayout.CENTER);
-        add(consolaErrores, BorderLayout.SOUTH);
+        add(panelInferior, BorderLayout.SOUTH);
 
         // Cargar por defecto la primera prueba seleccionada
         cargarDificultadSeleccionada();
+    }
+
+    private void actualizarBarraEstado() {
+        try {
+            int caretPos = fuente.getCaretPosition();
+            int totalLineas = Math.max(1, fuente.getLineCount());
+            int line = fuente.getLineOfOffset(caretPos) + 1;
+            int col = caretPos - fuente.getLineStartOffset(line - 1) + 1;
+            String estadoComp = (ultimosErrores.isEmpty() && ultimosErroresSintacticos.isEmpty())
+                    ? "✓ Compilación OK" : "⚠ Con Errores";
+            barraEstado.setText("Línea: " + line + " de " + totalLineas +
+                    "  |  Columna: " + col +
+                    "  |  Total Líneas de Código: " + totalLineas +
+                    "  |  Caracteres: " + fuente.getText().length() +
+                    "  |  Tokens: " + ultimosTokens.size() +
+                    "  |  Tiempo: " + ultimoTiempoMs + " ms" +
+                    "  |  Estado: " + estadoComp);
+        } catch (Exception ignored) {}
     }
 
     private void irALinea(int linea, int columna) {
@@ -225,6 +288,11 @@ public class VentanaPrincipal extends JFrame {
             fuente.setSelectionStart(startOffset);
             fuente.setSelectionEnd(endOffset);
             fuente.requestFocusInWindow();
+
+            // Resaltar visualmente la línea con un suave color rojo/rosa
+            fuente.getHighlighter().removeAllHighlights();
+            fuente.getHighlighter().addHighlight(startOffset, endOffset,
+                    new DefaultHighlighter.DefaultHighlightPainter(new Color(254, 202, 202)));
         } catch (Exception ignored) {}
     }
 
@@ -302,6 +370,8 @@ public class VentanaPrincipal extends JFrame {
         simbolos.setRowCount(0);
         errores.setRowCount(0);
         erroresSintacticos.setRowCount(0);
+        advertencias.setRowCount(0);
+        fuente.getHighlighter().removeAllHighlights();
 
         try {
             // Ejecución desacoplada mediante el coordinador del pipeline CompiladorJS
@@ -311,7 +381,9 @@ public class VentanaPrincipal extends JFrame {
             ultimaTabla = resultado.tablaSimbolos();
             ultimosErrores = resultado.erroresLexicos();
             ultimosErroresSintacticos = resultado.erroresSintacticos();
+            ultimasAdvertencias = resultado.advertencias();
             ultimoAst = resultado.astRaiz();
+            ultimoTiempoMs = resultado.tiempoCompilacionMs();
 
             // 1. Poblar tabla de tokens
             int i = 0;
@@ -355,7 +427,16 @@ public class VentanaPrincipal extends JFrame {
                 });
             }
 
-            // 5. Actualizar Árbol Sintáctico (AST)
+            // 5. Poblar advertencias
+            int advIdx = 1;
+            for (String adv : ultimasAdvertencias) {
+                advertencias.addRow(new Object[]{
+                    advIdx++,
+                    adv
+                });
+            }
+
+            // 6. Actualizar Árbol Sintáctico (AST)
             if (ultimoAst != null) {
                 arbolSintactico.setModel(new DefaultTreeModel(ultimoAst.toTreeNode()));
                 expandirArbol(true);
@@ -363,11 +444,17 @@ public class VentanaPrincipal extends JFrame {
                 arbolSintactico.setModel(new DefaultTreeModel(new DefaultMutableTreeNode("Árbol vacío o con errores sintácticos")));
             }
 
-            // 6. Actualizar vista del informe ejecutivo en HTML
+            // 7. Actualizar vista del informe ejecutivo en HTML
             vistaReporte.setText(GeneradorReporte.generarHTMLParaSwing(
                     nombreArchivoActual, fuente.getText(), ultimosTokens, ultimaTabla,
                     ultimosErrores, ultimosErroresSintacticos, ultimoAst));
             vistaReporte.setCaretPosition(0);
+
+            actualizarBarraEstado();
+            if (numeroLinea != null) {
+                numeroLinea.revalidate();
+                numeroLinea.repaint();
+            }
 
         } catch (Exception ex) {
             mostrarError(ex);
@@ -382,16 +469,53 @@ public class VentanaPrincipal extends JFrame {
             return;
         }
 
-        String[] opciones = {"Reporte HTML (Completo con Estilos)", "Reporte Markdown (.md)", "Cancelar"};
+        String[] opciones = {
+            "Reporte HTML (Con Diagrama Mermaid y Estilos)",
+            "Reporte Markdown (.md)",
+            "Diagrama de Árbol Mermaid (.mmd)",
+            "Cancelar"
+        };
         int seleccion = JOptionPane.showOptionDialog(this,
-                "Seleccione el formato en el que desea exportar el reporte contextualizado:",
-                "Exportar Reporte de Análisis Léxico y Sintáctico",
+                "Seleccione el formato en el que desea exportar:",
+                "Exportar Resultados del Compilador",
                 JOptionPane.DEFAULT_OPTION, JOptionPane.QUESTION_MESSAGE, null, opciones, opciones[0]);
 
         if (seleccion == 0) {
             exportarArchivo(true);
         } else if (seleccion == 1) {
             exportarArchivo(false);
+        } else if (seleccion == 2) {
+            exportarMermaid();
+        }
+    }
+
+    private void exportarMermaid() {
+        if (ultimoAst == null) {
+            JOptionPane.showMessageDialog(this,
+                    "No se dispone de un Árbol Sintáctico (AST) para exportar.",
+                    "Aviso", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+
+        String sugerido = "ast_" + nombreArchivoActual.replaceAll("\\.[^.]+$", "") + ".mmd";
+        JFileChooser chooser = new JFileChooser(".");
+        chooser.setSelectedFile(new File(sugerido));
+        chooser.setFileFilter(new FileNameExtensionFilter("Diagrama Mermaid (*.mmd)", "mmd"));
+
+        if (chooser.showSaveDialog(this) == JFileChooser.APPROVE_OPTION) {
+            File destino = chooser.getSelectedFile();
+            if (!destino.getName().toLowerCase().endsWith(".mmd")) {
+                destino = new File(destino.getParentFile(), destino.getName() + ".mmd");
+            }
+
+            try {
+                GeneradorReporte.guardarEnArchivo(destino, ultimoAst.toMermaid());
+                JOptionPane.showMessageDialog(this,
+                        "Diagrama Mermaid guardado en:\n" + destino.getAbsolutePath(),
+                        "Exportación Exitosa", JOptionPane.INFORMATION_MESSAGE);
+            } catch (Exception ex) {
+                mostrarError(ex);
+            }
         }
     }
 

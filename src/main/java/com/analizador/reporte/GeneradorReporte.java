@@ -402,6 +402,12 @@ public final class GeneradorReporte {
             sb.append("  <div class=\"section\">\n");
             sb.append("    <h2>Representación Textual del Árbol Sintáctico (AST)</h2>\n");
             sb.append("    <pre class=\"code-snippet\"><code>").append(escaparHtml(formatearAST(ast, 0))).append("</code></pre>\n");
+            sb.append("    <h3 style=\"margin-top: 15px; margin-bottom: 10px;\">Diagrama Visual Interactivo del AST (Mermaid)</h3>\n");
+            sb.append("    <pre class=\"mermaid\">\n").append(escaparHtml(ast.toMermaid())).append("    </pre>\n");
+            sb.append("    <script type=\"module\">\n");
+            sb.append("      import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';\n");
+            sb.append("      mermaid.initialize({ startOnLoad: true, theme: 'neutral' });\n");
+            sb.append("    </script>\n");
             sb.append("  </div>\n");
         }
 
@@ -505,13 +511,6 @@ public final class GeneradorReporte {
         }
 
         sb.append("## 3. Tabla de Símbolos\n\n");
-
-        if (ast != null) {
-            sb.append("## 4. Estructura Jerárquica del AST\n\n");
-            sb.append("```text\n").append(formatearAST(ast, 0)).append("\n```\n\n");
-        }
-
-        sb.append("## 5. Tabla de Símbolos\n\n");
         var simbolos = tablaSimbolos.obtenerTodos();
         if (simbolos.isEmpty()) {
             sb.append("_No se registraron identificadores._\n\n");
@@ -526,7 +525,14 @@ public final class GeneradorReporte {
             sb.append("\n");
         }
 
-        sb.append("## 6. Código Fuente Analizado\n\n");
+        if (ast != null) {
+            sb.append("## 4. Estructura Jerárquica del AST\n\n");
+            sb.append("```text\n").append(formatearAST(ast, 0)).append("```\n\n");
+            sb.append("### Diagrama Visual del Árbol (Mermaid)\n\n");
+            sb.append("```mermaid\n").append(ast.toMermaid()).append("```\n\n");
+        }
+
+        sb.append("## 5. Código Fuente Analizado\n\n");
         sb.append("```javascript\n").append(codigoFuente).append("\n```\n\n");
 
         sb.append("---\n*Reporte generado automáticamente por Analizador Léxico y Sintáctico JS (Java 21)*\n");
