@@ -153,6 +153,64 @@ void testDeclaracionMalTerminada() throws Exception {
     }
 
     @Test
+    @DisplayName("Mario - Módulo Expresiones: precedencia, operadores unarios y literales")
+    void testExpresionesEnImpresion() throws Exception {
+        String codigo = """
+                console.log("resultado", 1 + 2 * 3, -(4 - 1), !false, ++contador, contador--);
+                print(`listo`, null, true, 2.5);
+                """;
+        AnalizadorSintacticoJS parser = parsear(codigo);
+        assertTrue(parser.getErroresSintacticos().isEmpty(),
+                "Las expresiones y listas de argumentos deben analizarse sin errores");
+
+        NodoAST.Programa programa = (NodoAST.Programa) parser.getAstRaiz();
+        assertEquals(2, programa.sentencias().size());
+
+        NodoAST.SentenciaImprimir consoleLog =
+                (NodoAST.SentenciaImprimir) programa.sentencias().get(0);
+        assertEquals(6, consoleLog.argumentos().size());
+
+        NodoAST.ExpresionBinaria suma =
+                (NodoAST.ExpresionBinaria) consoleLog.argumentos().get(1);
+        assertEquals("+", suma.operador());
+        assertInstanceOf(NodoAST.ExpresionBinaria.class, suma.derecha());
+        assertEquals("*", ((NodoAST.ExpresionBinaria) suma.derecha()).operador());
+
+        assertEquals("-", ((NodoAST.ExpresionUnaria) consoleLog.argumentos().get(2)).operador());
+        assertEquals("!", ((NodoAST.ExpresionUnaria) consoleLog.argumentos().get(3)).operador());
+        assertEquals("++ (prefijo)",
+                ((NodoAST.ExpresionUnaria) consoleLog.argumentos().get(4)).operador());
+        assertEquals("-- (postfijo)",
+                ((NodoAST.ExpresionUnaria) consoleLog.argumentos().get(5)).operador());
+
+        NodoAST.SentenciaImprimir print =
+                (NodoAST.SentenciaImprimir) programa.sentencias().get(1);
+        assertEquals(4, print.argumentos().size());
+        assertEquals("Plantilla", ((NodoAST.Literal) print.argumentos().get(0)).tipo());
+        assertEquals("Null", ((NodoAST.Literal) print.argumentos().get(1)).tipo());
+        assertEquals(Boolean.TRUE, ((NodoAST.Literal) print.argumentos().get(2)).valor());
+        assertEquals("Flotante", ((NodoAST.Literal) print.argumentos().get(3)).tipo());
+    }
+
+    @Test
+    @DisplayName("Mario - print sin paréntesis debe generar error")
+    void testPrintSinParentesis() throws Exception {
+        String codigo = "print \"hola\";";
+        AnalizadorSintacticoJS parser = parsear(codigo);
+        assertFalse(parser.getErroresSintacticos().isEmpty(),
+                "Debe detectar print sin paréntesis como error");
+    }
+
+    @Test
+    @DisplayName("Mario - console.log sin cierre de paréntesis debe generar error")
+    void testConsoleLogSinCierre() throws Exception {
+        String codigo = "console.log(\"incompleto\";";
+        AnalizadorSintacticoJS parser = parsear(codigo);
+        assertFalse(parser.getErroresSintacticos().isEmpty(),
+                "Debe detectar console.log sin cerrar paréntesis");
+    }
+
+    @Test
     @DisplayName("Alejandro - Integración Completa: Programa que combina variables, if, impresión y árbol visual")
     void testProgramaCompletoConArbol() throws Exception {
         String codigo = """
