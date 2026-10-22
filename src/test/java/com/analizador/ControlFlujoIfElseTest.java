@@ -79,9 +79,89 @@ public class ControlFlujoIfElseTest {
     }
 
     @Test
+    @DisplayName("Sentencias simples sin llaves en rama then y else")
+    void testSentenciasSimplesSinLlaves() throws Exception {
+        String codigo = """
+                if (x > 0)
+                    print(x);
+                else
+                    console.log("no positivo");
+                """;
+        NodoAST.Programa prog = programa(parsear(codigo));
+        assertEquals(1, prog.sentencias().size());
+
+        NodoAST.SentenciaIf sentenciaIf = (NodoAST.SentenciaIf) prog.sentencias().get(0);
+        assertInstanceOf(NodoAST.SentenciaImprimir.class, sentenciaIf.bloqueThen());
+        assertInstanceOf(NodoAST.SentenciaImprimir.class, sentenciaIf.bloqueElse());
+    }
+
+    @Test
+    @DisplayName("Condiciones lógicas y relacionales complejas combinadas con &&, || y !")
+    void testCondicionLogicaCompleja() throws Exception {
+        String codigo = """
+                if ((edad >= 18 && !bloqueado) || saldo > 1000) {
+                    let acceso = true;
+                }
+                """;
+        NodoAST.Programa prog = programa(parsear(codigo));
+        assertEquals(1, prog.sentencias().size());
+
+        NodoAST.SentenciaIf sentenciaIf = (NodoAST.SentenciaIf) prog.sentencias().get(0);
+        assertNotNull(sentenciaIf.condicion());
+        assertInstanceOf(NodoAST.ExpresionBinaria.class, sentenciaIf.condicion());
+        NodoAST.ExpresionBinaria orExp = (NodoAST.ExpresionBinaria) sentenciaIf.condicion();
+        assertEquals("||", orExp.operador());
+    }
+
+    @Test
+    @DisplayName("Múltiples else-if encadenados con declaraciones y asignaciones")
+    void testElseIfMultipleConDeclaraciones() throws Exception {
+        String codigo = """
+                let calificacion = "F";
+                if (nota >= 90) {
+                    calificacion = "A";
+                } else if (nota >= 80) {
+                    calificacion = "B";
+                } else if (nota >= 70) {
+                    calificacion = "C";
+                } else {
+                    calificacion = "D";
+                }
+                """;
+        NodoAST.Programa prog = programa(parsear(codigo));
+        assertEquals(2, prog.sentencias().size());
+
+        assertInstanceOf(NodoAST.DeclaracionVariable.class, prog.sentencias().get(0));
+        assertInstanceOf(NodoAST.SentenciaIf.class, prog.sentencias().get(1));
+
+        NodoAST.SentenciaIf if1 = (NodoAST.SentenciaIf) prog.sentencias().get(1);
+        assertInstanceOf(NodoAST.SentenciaIf.class, if1.bloqueElse());
+
+        NodoAST.SentenciaIf if2 = (NodoAST.SentenciaIf) if1.bloqueElse();
+        assertInstanceOf(NodoAST.SentenciaIf.class, if2.bloqueElse());
+
+        NodoAST.SentenciaIf if3 = (NodoAST.SentenciaIf) if2.bloqueElse();
+        assertInstanceOf(NodoAST.Bloque.class, if3.bloqueElse());
+    }
+
+    @Test
     @DisplayName("Paréntesis sin cerrar en la condición genera error sintáctico")
     void testErrorCondicionSinCerrar() throws Exception {
         AnalizadorSintacticoJS parser = parsear("if (a > 1 { x = 1; }");
         assertFalse(parser.getErroresSintacticos().isEmpty(), "Debe reportarse un error sintáctico");
+    }
+
+    @Test
+    @DisplayName("Condición vacía genera error sintáctico")
+    void testErrorCondicionVacia() throws Exception {
+        AnalizadorSintacticoJS parser = parsear("if () { x = 1; }");
+        assertFalse(parser.getErroresSintacticos().isEmpty(), "Condición vacía debe arrojar error");
+    }
+
+    @Test
+    @DisplayName("Else sin if previo genera error sintáctico")
+    void testErrorElseSinIf() throws Exception {
+        AnalizadorSintacticoJS parser = parsear("else { x = 1; }");
+        assertFalse(parser.getErroresSintacticos().isEmpty(), "Else huérfano debe arrojar error");
     }
 }
