@@ -59,6 +59,7 @@ public class VentanaPrincipal extends JFrame {
         "Dificultad Alta",
         "Dificultad Muy Compleja",
         "Prueba Sintáctica Completa (Grupo)",
+        "Prueba IF / ELSE (Pablo)",
         "Prueba Errores Léxicos"
     };
 
@@ -68,6 +69,7 @@ public class VentanaPrincipal extends JFrame {
         "algoritmo_alto.js",
         "algoritmo_muy_complejo.js",
         "algoritmo_sintactico_completo.js",
+        "algoritmo_if_else.js",
         "algoritmo_errores.js"
     };
 
