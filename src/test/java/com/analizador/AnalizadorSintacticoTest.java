@@ -58,6 +58,33 @@ public class AnalizadorSintacticoTest {
         assertTrue(asig.valor() instanceof NodoAST.ExpresionBinaria);
     }
 
+    
+@Test
+@DisplayName("Helen - const sin inicialización debe generar error")
+void testConstSinInicializacion() throws Exception {
+    String codigo = "const PI;";
+
+    AnalizadorSintacticoJS parser = parsear(codigo);
+
+    assertFalse(
+        parser.getErroresSintacticos().isEmpty(),
+        "Debe detectar const sin valor inicial"
+    );
+}
+
+@Test
+@DisplayName("Helen - declaración mal terminada debe generar error")
+void testDeclaracionMalTerminada() throws Exception {
+    String codigo = "let edad = 20";
+
+    AnalizadorSintacticoJS parser = parsear(codigo);
+
+    assertFalse(
+        parser.getErroresSintacticos().isEmpty(),
+        "Debe detectar la falta del punto y coma"
+    );
+}
+
     @Test
     @DisplayName("Pablo - Módulo Control de Flujo: IF simple, IF-ELSE y condiciones lógicas")
     void testInstruccionIf() throws Exception {
